@@ -1,0 +1,60 @@
+ name: Discord Bot CI/CD to TrueNAS (using GHCR)
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # --- CI (持續整合): 構建並推送 Docker 映像檔至 GHCR ---
+    - name: Log in to GitHub Container Registry (GHCR)
+      uses: docker/login-action@v3
+      with:
+        # GHCR 的網域
+        registry: ghcr.io
+        # 使用 GitHub 內建的執行者帳號名稱
+        username: ${{ github.actor }}
+        # 使用 GitHub Actions 內建的 Token，具有推送權限
+        password: ${{ secrets.GITHUB_TOKEN }} 
+
+    - name: Extract metadata (tags) for Docker
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        # 映像檔路徑：ghcr.io/您的GitHub用戶名/您的倉庫名稱 (例如：ghcr.io/octocat/SBot)
+        # ${{ github.repository }} 會自動解析為 您的GitHub用戶名/您的倉庫名稱
+        images: ghcr.io/${{ github.repository }} 
+        tags: |
+          latest 
+          ${{ github.sha }}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+
+    # --- CD (持續部署): SSH 到 TrueNAS 進行更新 ---
+    - name: Deploy Update Command to TrueNAS via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.TRUENAS_HOST }}
+        username: ${{ secrets.TRUENAS_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          echo "Image pushed to GHCR successfully."
+          echo "Please update the App in TrueNAS SCALE web UI to pull the latest image: ghcr.io/${{ github.repository }}:latest"
+          
+          # 注意：如果您的 TrueNAS SCALE 應用程式設定了私有映像檔，
+          # 您需要在 TrueNAS 上設定對 GHCR 的 Pull Secret。
+          # 對於公共倉庫，或是使用預設 Pull Secret 的私有倉庫，通常不需要額外操作。
+          
+          echo "Deployment script finished."
