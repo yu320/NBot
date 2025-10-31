@@ -4,7 +4,7 @@ import json
 import asyncio
 import os
 
-with open('NBot\\setting.json', 'r', encoding='utf8') as jfile:
+with open('setting.json', 'r', encoding='utf8') as jfile:
     jdata = json.load(jfile)
 
 intents = discord.Intents.all() #如果沒有這行機器人沒有權限
