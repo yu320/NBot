@@ -2,19 +2,21 @@ name: CI/CD to TrueNAS via GHCR
 
 on:
   push:
+    # 設置在推送到 main 分支時觸發工作流程
     branches:
       - main
   workflow_dispatch:
+    # 允許手動從 GitHub Actions 介面觸發部署
 
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     
-    # 設置 GHCR 映像檔路徑
+    # 修正 env 區塊：將變數定義為靜態值，或使用有效的 Context
     env:
       IMAGE_NAME: nbot-discord
-      # ⚠️ 映像檔路徑格式: ghcr.io/<GitHub_Owner>/<Image_Name>
-      GHCR_REPO: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+      # 直接使用 github.repository_owner 和靜態 Image Name
+      GHCR_REPO: ghcr.io/${{ github.repository_owner }}/nbot-discord 
       
     steps:
       - name: Checkout code
@@ -38,7 +40,7 @@ jobs:
         with:
           context: .
           push: true
-          # 使用 GHCR_REPO 變數來指定儲存庫
+          # 這裡使用 ${{ env.GHCR_REPO }} 是正確的
           tags: |
             ${{ env.GHCR_REPO }}:latest
             ${{ env.GHCR_REPO }}:${{ github.sha }}
@@ -49,32 +51,29 @@ jobs:
       - name: Deploy to TrueNAS via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
+          # SSH 連線資訊來自 GitHub Secrets
           host: ${{ secrets.TRUENAS_HOST }}
           username: ${{ secrets.TRUENAS_USER }}
           key: ${{ secrets.TRUENAS_SSH_KEY }}
           script: |
             # 遠端伺服器上的部署腳本
-            echo "--- 1. 登入 GHCR (如果需要私人映像檔) ---"
-            # 如果您的映像檔是私有的 (預設)，TrueNAS 上的 Docker 服務需要登入。
-            # 這裡需要您在 TrueNAS Secrets/環境變數中設定 GHCR 讀取權杖
-            # 為了簡化，如果您的 GHCR 映像檔設定為公開 (Public)，則可省略此步驟。
-            # 如果是私有，您需要建立一個 Personal Access Token (PAT) 具備 read:packages 權限，並將其設定為 TrueNAS 上的環境變數。
-
-            echo "--- 2. 拉取最新映像檔 ---"
-            # 拉取最新映像檔
+            
+            echo "--- 1. 拉取最新映像檔 ---"
             docker pull ${{ env.GHCR_REPO }}:latest
 
-            echo "--- 3. 停止並移除舊容器 ---"
+            echo "--- 2. 停止並移除舊容器 ---"
+            # 假設容器名稱為 nbot
             docker stop nbot || true
             docker rm nbot || true
 
-            echo "--- 4. 啟動新容器 ---"
+            echo "--- 3. 啟動新容器並傳遞環境變數 ---"
+            # !! IMPORTANT: 確保所有 Secrets 都已在 GitHub 上設定 !!
             docker run -d \
               --name nbot \
               --restart unless-stopped \
-              -e DISCORD_TOKEN='<YOUR_DISCORD_TOKEN>' \
-              -e CHANNEL_ID='<YOUR_CHANNEL_ID>' \
-              -e UPTIME_KUMA_URL='<YOUR_UPTIME_KUMA_URL>' \
+              -e DISCORD_TOKEN='${{ secrets.DISCORD_TOKEN }}' \
+              -e CHANNEL_ID='${{ secrets.CHANNEL_ID }}' \
+              -e UPTIME_KUMA_URL='${{ secrets.UPTIME_KUMA_URL }}' \
               ${{ env.GHCR_REPO }}:latest
 
-            echo "--- 5. 部署完成 ---"
+            echo "--- 4. 部署完成 ---"
