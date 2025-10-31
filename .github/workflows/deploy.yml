@@ -12,21 +12,20 @@ jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     
-    # 【GHCR 權限】
     permissions:
-      contents: read     # 讀取倉庫內容 (用於 Checkout)
-      packages: write    # 寫入 packages (用於推送 GHCR 映像檔)
+      contents: read
+      packages: write
 
     env:
       IMAGE_NAME: nbot-discord
-      # 確保語法正確
+      # 確保語法正確 (使用 ${{ github.repository_owner }} 自動抓取您的 GitHub 名稱)
       GHCR_REPO: ghcr.io/${{ github.repository_owner }}/nbot-discord 
       
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # --- 1. GHCR 登入與設定 (使用 GITHUB_TOKEN) ---
+      # --- 1. GHCR 登入與設定 ---
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -49,11 +48,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # --- 3. 部署到 TrueNAS (透過 SSH 執行 Docker 更新指令) ---
+      # --- 3. 部署到 TrueNAS (透過 SSH 執行 Docker Compose 指令) ---
       - name: Deploy to TrueNAS via SSH
         uses: appleboy/ssh-action@v1.0.3
         
-        # 【關鍵修正】在這裡安全地將 GitHub Secrets 傳遞為環境變數
+        # 將 GitHub Secrets 傳遞為環境變數
+        # 這些變數會被 SSH 腳本中的 'docker compose up' 讀取
         env:
           TOKEN: ${{ secrets.DISCORD_TOKEN }}
           CHAN_ID: ${{ secrets.CHANNEL_ID }}
@@ -65,30 +65,24 @@ jobs:
           host: ${{ secrets.TRUENAS_HOST }}
           username: ${{ secrets.TRUENAS_USER }}
           key: ${{ secrets.TRUENAS_SSH_KEY }}
-          # 【關鍵修正：指定自訂埠號】
           port: ${{ secrets.SSH_PORT }} 
           
           script: |
             # 遠端伺服器上的部署腳本
             
+            # 【關鍵】導航到您的 docker-compose.yml 檔案所在的目錄
+            # (此路徑來自您的日誌截圖)
+            cd /mnt/nas/apps/Dockge/Stacks/discord_bot/
+            
             echo "--- 1. 拉取最新映像檔 ---"
-            # 【關鍵修正】使用 $GHCR_REPO_URL 環境變數
             docker pull $GHCR_REPO_URL:latest
 
-            echo "--- 2. 停止並移除舊容器 ---"
-            # 假設容器名稱為 nbot
-            docker stop nbot || true
-            docker rm nbot || true
+            echo "--- 2. 使用 docker compose 重新啟動服務 ---"
+            # 'docker compose up -d' 會自動偵測到新映像檔並重新建立 nbot 容器
+            # 它也會自動讀取 CI/CD 傳入的 $TOKEN, $CHAN_ID, $KUMA_URL
+            docker compose up -d
 
-            echo "--- 3. 啟動新容器並傳遞環境變數 ---"
-            # 【關鍵修正】使用 $TOKEN, $CHAN_ID, $KUMA_URL 環境變數
-            # 並且使用雙引號 "" 來確保特殊字元被正確處理
-            docker run -d \
-              --name nbot \
-              --restart unless-stopped \
-              -e DISCORD_TOKEN="$TOKEN" \
-              -e CHANNEL_ID="$CHAN_ID" \
-              -e UPTIME_KUMA_URL="$KUMA_URL" \
-              $GHCR_REPO_URL:latest
+            echo "--- 3. 清理舊映像檔 (可選) ---"
+            docker image prune -f
 
             echo "--- 4. 部署完成 ---"
