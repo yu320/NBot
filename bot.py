@@ -11,7 +11,7 @@ load_dotenv()
 
 # --- 核心設定 (從環境變數讀取) ---
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix='!' , intents = intents)
+bot = commands.Bot(command_prefix='!!' , intents = intents)
 
 # 從環境變數獲取配置
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
@@ -94,4 +94,5 @@ if __name__ == "__main__":
         # 啟動機器人
         bot.run(DISCORD_TOKEN)
     else:
+
         print("Error: DISCORD_TOKEN not found in environment variables. Bot startup aborted.")
