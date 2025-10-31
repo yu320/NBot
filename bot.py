@@ -28,7 +28,7 @@ async def unload(ctx, extension):
 
 async def load_extensions(bot):
     # 設置 cmds 資料夾的絕對路徑
-    cmds_dir = r'C:\Users\Master\Desktop\Bot\SDChelper\cmds'
+    cmds_dir = './cmds'
     if os.path.exists(cmds_dir):
         for filename in os.listdir(cmds_dir):
             if filename.endswith(".py"):
