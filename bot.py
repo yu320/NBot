@@ -11,7 +11,7 @@ load_dotenv()
 
 # --- 核心設定 (從環境變數讀取) ---
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix='!!' , intents = intents)
+bot = commands.Bot(command_prefix='#' , intents = intents)
 
 # 從環境變數獲取配置
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
@@ -76,7 +76,7 @@ async def on_ready():
     if CHANNEL_ID:
         channel = bot.get_channel(int(CHANNEL_ID))
         if channel:
-            await channel.send('我上線啦!')
+            await channel.send('我上線了 汪!')
         else:
             print(f"Warning: Channel ID {CHANNEL_ID} not found.")
 
@@ -96,3 +96,5 @@ if __name__ == "__main__":
     else:
 
         print("Error: DISCORD_TOKEN not found in environment variables. Bot startup aborted.")
+
+

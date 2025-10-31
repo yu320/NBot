@@ -1,0 +1,13 @@
+services:
+  nbot:
+    # 1. 指定您在 GHCR 上的映像檔 (請確保 'yu320' 是您正確的 GitHub 使用者名稱)
+    image: ghcr.io/yu320/nbot-discord:latest
+    container_name: nbot
+    restart: unless-stopped
+    environment:
+      # 2. 讓 Compose 從環境變數讀取金鑰
+      # 這些變數名稱 (TOKEN, CHAN_ID) 必須與您的 CI/CD 檔案中的 'env:' 區塊完全對應
+      - DISCORD_TOKEN=${TOKEN}
+      - CHANNEL_ID=${CHAN_ID}
+      - UPTIME_KUMA_URL=${KUMA_URL}
+networks: {}
