@@ -2,11 +2,9 @@ name: CI/CD to TrueNAS via GHCR
 
 on:
   push:
-    # 設置在推送到 main 分支時觸發工作流程
     branches:
       - main
   workflow_dispatch:
-    # 允許手動從 GitHub Actions 介面觸發部署
 
 jobs:
   build_and_deploy:
@@ -18,14 +16,14 @@ jobs:
 
     env:
       IMAGE_NAME: nbot-discord
-      # 確保語法正確 (使用 ${{ github.repository_owner }} 自動抓取您的 GitHub 名稱)
+      # 這是我們在 GHA Runner 中定義的變數
       GHCR_REPO: ghcr.io/${{ github.repository_owner }}/nbot-discord 
       
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # --- 1. GHCR 登入與設定 ---
+      # --- 1. & 2. 登入、建置、推送 (這部分保持不變) ---
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -36,7 +34,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # --- 2. 建構並推送 Docker 映像檔到 GHCR ---
       - name: Build and Push Docker image to GHCR
         uses: docker/build-push-action@v5
         with:
@@ -48,38 +45,34 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # --- 3. 部署到 TrueNAS (透過 SSH 執行 Docker Compose 指令) ---
+      # --- 3. 部署到 TrueNAS (*** 這部分已修改 ***) ---
       - name: Deploy to TrueNAS via SSH
         uses: appleboy/ssh-action@v1.0.3
         
-        # 將 GitHub Secrets 傳遞為環境變數
-        # 這些變數會被 SSH 腳本中的 'docker compose up' 讀取
+        # 這些變數是給 docker compose up -d 使用的
         env:
           TOKEN: ${{ secrets.DISCORD_TOKEN }}
           CHAN_ID: ${{ secrets.CHANNEL_ID }}
           KUMA_URL: ${{ secrets.UPTIME_KUMA_URL }}
-          GHCR_REPO_URL: ${{ env.GHCR_REPO }}
+          # 我們不再需要 GHCR_REPO_URL 了
 
         with:
-          # SSH 連線資訊來自 GitHub Secrets
           host: ${{ secrets.TRUENAS_HOST }}
           username: ${{ secrets.TRUENAS_USER }}
           key: ${{ secrets.TRUENAS_SSH_KEY }}
           port: ${{ secrets.SSH_PORT }} 
           
           script: |
-            # 遠端伺服器上的部署腳本
-            
-            # 【關鍵】導航到您的 docker-compose.yml 檔案所在的目錄
-            # (此路徑來自您的日誌截圖)
+            # 導航到您的 docker-compose.yml 檔案所在的目錄
             cd /mnt/nas/apps/Dockge/Stacks/discord_bot/
             
             echo "--- 1. 拉取最新映像檔 ---"
-            docker pull $GHCR_REPO_URL:latest
-
+            # 【*** 關鍵修正 ***】
+            # 我們不再使用 $GHCR_REPO_URL 變數
+            # 而是直接使用 GHA 語法 ${{ env.GHCR_REPO }} 將名稱嵌入
+            docker pull ${{ env.GHCR_REPO }}:latest
+            
             echo "--- 2. 使用 docker compose 重新啟動服務 ---"
-            # 'docker compose up -d' 會自動偵測到新映像檔並重新建立 nbot 容器
-            # 它也會自動讀取 CI/CD 傳入的 $TOKEN, $CHAN_ID, $KUMA_URL
             docker compose up -d
 
             echo "--- 3. 清理舊映像檔 (可選) ---"
