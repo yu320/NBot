@@ -1,0 +1,15 @@
+# Discord 機器人的核心函式庫
+discord.py
+
+# 用於從 .env 檔案加載環境變數
+python-dotenv
+
+# 用於執行 Uptime Kuma 心跳任務的 HTTP 請求
+requests
+
+PyNaCl
+
+
+
+# (可選) 您的某些功能可能使用了  模組來讀取或寫入設定檔（雖然 bot.py 中註釋掉了讀取 setting.json 的部分，但其他編譯檔中仍有 json 相關操作，為安全起見先保留，但通常內建不需要列出）
+# (可選) 您的功能使用了 os, asyncio, datetime, random, os.path 等，這些都是 Python 標準庫，不需要列出。
