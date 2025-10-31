@@ -12,15 +12,14 @@ jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     
-    # 【修正 GHCR 權限錯誤的關鍵】
-    # 授予 GITHUB_TOKEN 寫入 packages 的權限
+    # 【GHCR 權限】
     permissions:
       contents: read     # 讀取倉庫內容 (用於 Checkout)
       packages: write    # 寫入 packages (用於推送 GHCR 映像檔)
 
     env:
       IMAGE_NAME: nbot-discord
-      # 修正：確保語法正確
+      # 確保語法正確
       GHCR_REPO: ghcr.io/${{ github.repository_owner }}/nbot-discord 
       
     steps:
@@ -32,7 +31,6 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          # 使用 GitHub Actions 提供的內建權杖進行驗證
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }} 
 
@@ -59,6 +57,9 @@ jobs:
           host: ${{ secrets.TRUENAS_HOST }}
           username: ${{ secrets.TRUENAS_USER }}
           key: ${{ secrets.TRUENAS_SSH_KEY }}
+          # 【關鍵修正：指定自訂埠號】
+          port: ${{ secrets.SSH_PORT }} 
+          
           script: |
             # 遠端伺服器上的部署腳本
             
