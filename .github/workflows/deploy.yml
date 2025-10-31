@@ -52,6 +52,14 @@ jobs:
       # --- 3. 部署到 TrueNAS (透過 SSH 執行 Docker 更新指令) ---
       - name: Deploy to TrueNAS via SSH
         uses: appleboy/ssh-action@v1.0.3
+        
+        # 【關鍵修正】在這裡安全地將 GitHub Secrets 傳遞為環境變數
+        env:
+          TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          CHAN_ID: ${{ secrets.CHANNEL_ID }}
+          KUMA_URL: ${{ secrets.UPTIME_KUMA_URL }}
+          GHCR_REPO_URL: ${{ env.GHCR_REPO }}
+
         with:
           # SSH 連線資訊來自 GitHub Secrets
           host: ${{ secrets.TRUENAS_HOST }}
@@ -64,7 +72,8 @@ jobs:
             # 遠端伺服器上的部署腳本
             
             echo "--- 1. 拉取最新映像檔 ---"
-            docker pull ${{ env.GHCR_REPO }}:latest
+            # 【關鍵修正】使用 $GHCR_REPO_URL 環境變數
+            docker pull $GHCR_REPO_URL:latest
 
             echo "--- 2. 停止並移除舊容器 ---"
             # 假設容器名稱為 nbot
@@ -72,13 +81,14 @@ jobs:
             docker rm nbot || true
 
             echo "--- 3. 啟動新容器並傳遞環境變數 ---"
-            # 確保 Discord/Uptime Kuma 環境變數被傳遞
+            # 【關鍵修正】使用 $TOKEN, $CHAN_ID, $KUMA_URL 環境變數
+            # 並且使用雙引號 "" 來確保特殊字元被正確處理
             docker run -d \
               --name nbot \
               --restart unless-stopped \
-              -e DISCORD_TOKEN='${{ secrets.DISCORD_TOKEN }}' \
-              -e CHANNEL_ID='${{ secrets.CHANNEL_ID }}' \
-              -e UPTIME_KUMA_URL='${{ secrets.UPTIME_KUMA_URL }}' \
-              ${{ env.GHCR_REPO }}:latest
+              -e DISCORD_TOKEN="$TOKEN" \
+              -e CHANNEL_ID="$CHAN_ID" \
+              -e UPTIME_KUMA_URL="$KUMA_URL" \
+              $GHCR_REPO_URL:latest
 
             echo "--- 4. 部署完成 ---"
