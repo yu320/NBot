@@ -12,10 +12,15 @@ jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     
-    # 修正 env 區塊：將變數定義為靜態值，或使用有效的 Context
+    # 【修正 GHCR 權限錯誤的關鍵】
+    # 授予 GITHUB_TOKEN 寫入 packages 的權限
+    permissions:
+      contents: read     # 讀取倉庫內容 (用於 Checkout)
+      packages: write    # 寫入 packages (用於推送 GHCR 映像檔)
+
     env:
       IMAGE_NAME: nbot-discord
-      # 直接使用 github.repository_owner 和靜態 Image Name
+      # 修正：確保語法正確
       GHCR_REPO: ghcr.io/${{ github.repository_owner }}/nbot-discord 
       
     steps:
@@ -40,7 +45,6 @@ jobs:
         with:
           context: .
           push: true
-          # 這裡使用 ${{ env.GHCR_REPO }} 是正確的
           tags: |
             ${{ env.GHCR_REPO }}:latest
             ${{ env.GHCR_REPO }}:${{ github.sha }}
@@ -67,7 +71,7 @@ jobs:
             docker rm nbot || true
 
             echo "--- 3. 啟動新容器並傳遞環境變數 ---"
-            # !! IMPORTANT: 確保所有 Secrets 都已在 GitHub 上設定 !!
+            # 確保 Discord/Uptime Kuma 環境變數被傳遞
             docker run -d \
               --name nbot \
               --restart unless-stopped \
