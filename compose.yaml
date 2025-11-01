@@ -11,4 +11,5 @@ services:
       - CHANNEL_ID=${CHAN_ID}
       - UPTIME_KUMA_URL=${KUMA_URL}
       - CALENDAR_API_URL=${CAL_API_URL}
+      - MUSIC_CHANNEL_ID=${MUSIC_CHAN_ID}
 networks: {}

@@ -35,6 +35,7 @@ jobs:
           TOKEN: ${{ secrets.DISCORD_TOKEN }}
           CHAN_ID: ${{ secrets.CHANNEL_ID }}
           KUMA_URL: ${{ secrets.UPTIME_KUMA_URL }}
+          MUSIC_CHAN_ID: ${{ secrets.MUSIC_CHANNEL_ID }}
 
         with:
           host: ${{ secrets.TRUENAS_HOST }}

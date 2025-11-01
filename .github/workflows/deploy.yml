@@ -64,6 +64,7 @@ jobs:
           TOKEN: ${{ secrets.DISCORD_TOKEN }}
           CHAN_ID: ${{ secrets.CHANNEL_ID }}
           KUMA_URL: ${{ secrets.UPTIME_KUMA_URL }}
+          MUSIC_CHAN_ID: ${{ secrets.MUSIC_CHANNEL_ID }}
           # 我們不再需要 GHCR_REPO_URL 了
 
         with:
