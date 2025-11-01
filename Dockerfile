@@ -57,8 +57,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # 複製您的專案程式碼
 # 注意：這會將整個專案目錄複製到容器內
-COPY .
-.
+COPY . .
 
 # 暴露的環境變數 (在 TrueNAS/Docker run 時必須傳入)
 # 雖然不需要 EXPOSE 指令，但在註釋中提醒需要設定 ENV
