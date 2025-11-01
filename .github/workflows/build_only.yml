@@ -40,7 +40,7 @@ jobs:
           tags: |
             ${{ env.GHCR_REPO }}:latest
             ${{ env.GHCR_REPO }}:${{ github.sha }} # 使用 commit SHA 作為標籤，用於版本追蹤
-          cache-from: type=gha # 啟用 GitHub Actions Cache 提升建置速度
+          cache-from: type=gha
           cache-to: type=gha,mode=max
           
       # ⚠️ 注意：這裡已經移除了所有後續的 SSH 部署步驟
