@@ -7,26 +7,30 @@ import re
 import os     
 import json   
 import random 
-import logging # ✅ 1. 引入 logging 模組
+import logging 
 
 # --- yt-dlp 和 FFmpeg 設定 ---
 # (您的 Dockerfile 已安裝 ffmpeg)
 
-# yt-dlp 選項：搜尋並獲取最佳音訊，不下載
+# 
+# ✅ --- 修正點：移除 postprocessors 並優化 format ---
+#
 YDL_OPTS = {
-    'format': 'bestaudio/best',
-    'noplaylist': True, # 除非是播放清單指令，否則 #play 指令不應處理清單
+    # 優先選取壓縮過的格式 (m4a, aac, opus)，減少 RAM 負擔
+    'format': 'bestaudio[ext=m4a]/bestaudio[ext=aac]/bestaudio[ext=opus]/bestaudio/best',
+    'noplaylist': True, 
     'quiet': True,
-    'default_search': 'ytsearch', # 將 'ytsearch' 設為預設搜尋
+    'default_search': 'ytsearch', 
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
-    'postprocessors': [{
-        'key': 'FFmpegExtractAudio',
-        'preferredcodec': 'mp3',
-        'preferredquality': '192',
-    }],
-    'extract_flat': True # 加快播放清單的處理速度
+    # 
+    # 'postprocessors': [ ... ], # <-- 已移除此區塊，這是導致 Code 137 的主因
+    #
+    'extract_flat': True 
 }
+#
+# ✅ --- 修正結束 ---
+# 
 
 # FFmpeg 選項：在連接時自動重新連接，隱藏終端機輸出
 FFMPEG_OPTS = {
@@ -60,7 +64,6 @@ class MusicPlay(Cog_Extension):
     async def song_finished(self, ctx, error=None):
         """歌曲播放完畢時的回調函式"""
         if error:
-            # ✅ 2. print 改 logging
             logging.error(f"播放時發生錯誤 (Guild: {ctx.guild.id}): {error}")
             
         state = self.get_guild_state(ctx)
@@ -85,7 +88,7 @@ class MusicPlay(Cog_Extension):
             state['is_playing'] = False
             
             #
-            # ✅ --- 自動離開邏輯 (已註解) ---
+            # --- 自動離開邏輯 (已註解) ---
             # 未來若要啟用，請將以下 5 行的 '#' 移除
             #
             # await asyncio.sleep(180) # 等待 3 分鐘
@@ -185,7 +188,6 @@ class MusicPlay(Cog_Extension):
             try:
                 info = await loop.run_in_executor(None, lambda: ydl.extract_info(search, download=False))
             except Exception as e:
-                # ✅ 3. print 改 logging
                 logging.error(f"yt-dlp 搜尋失敗 (Guild: {ctx.guild.id}, Search: {search}): {e}")
                 return await ctx.send(f"❌ 搜尋失敗或找不到影片: {e}")
 
@@ -378,7 +380,7 @@ class MusicPlay(Cog_Extension):
         await ctx.send(embed=embed)
 
     # =========================================================
-    # ✅ --- (NEW) 指令錯誤處理函式 (提供教學) ---
+    # 指令錯誤處理函式 (提供教學)
     # =========================================================
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -419,7 +421,6 @@ class MusicPlay(Cog_Extension):
 
             # 6. 忽略其他錯誤，讓它繼續傳播
             else:
-                # ✅ 4. print 改 logging
                 # 可以在這裡印出未處理的錯誤，方便偵錯
                 logging.warning(f"MusicPlay Cog 中未處理的錯誤: {error}")
                 pass
@@ -430,7 +431,6 @@ class MusicPlay(Cog_Extension):
             if self.bot.extra_events.get('on_command_error', None) is not None:
                  await self.bot.on_command_error(ctx, error)
             else:
-                 # ✅ 5. print 改 logging
                  # 如果沒有其他監聽器，則引發錯誤
                  logging.error(f"來自其他 Cog 的錯誤 (在 MusicPlay 中捕獲): {error}")
 
