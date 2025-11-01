@@ -264,7 +264,8 @@ class Music(Cog_Extension):
                     await msg.channel.send(f"✅ 已將音樂 `{title}` (分享者: {msg.author.display_name}) 儲存。", delete_after=8)
                     
         # 確保指令仍然可以執行
-        await self.bot.process_commands(msg)
+        # await self.bot.process_commands(msg) # <- 修正點：註解或刪除此行以避免重複回應
+        
 
     # --- 指令：顯示清單 (使用按鈕分頁) ---
     @commands.command(name='musiclist', aliases=['音樂清單', '清單'])
