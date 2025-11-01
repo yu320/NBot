@@ -14,5 +14,5 @@ services:
       - CALENDAR_API_URL=${CAL_API_URL}
       - MUSIC_CHANNEL_ID=${MUSIC_CHAN_ID}
     volumes:
-      - ./data:/app
+      - ./data:/app/data
 networks: {}

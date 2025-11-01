@@ -4,6 +4,8 @@ from core.classes import Cog_Extension
 import os
 import requests
 import asyncio 
+import logging # <--- ✅ 1. 在此加入 logging 模組
+
 
 class Calendar(commands.Cog):
     
@@ -14,7 +16,7 @@ class Calendar(commands.Cog):
         # 從環境變數讀取 GAS Web App URL
         self.gas_api_url = os.getenv('CALENDAR_API_URL')
         if not self.gas_api_url:
-            print("警告：CALENDAR_API_URL 環境變數未設定，日曆新增功能將無法運作。")
+            logging.warning("警告：CALENDAR_API_URL 環境變數未設定，日曆新增功能將無法運作。")
 
     # =========================================================
     # ✅ 指令錯誤處理函式 (提供清晰的語法教學)
@@ -54,7 +56,7 @@ class Calendar(commands.Cog):
                  await self.bot.on_command_error(ctx, error)
             else:
                  # 如果沒有其他監聽器，則引發錯誤
-                 print(f"Unhandled error in {ctx.command}: {error}")
+                 logging.error(f"Unhandled error in {ctx.command}: {error}")
 
 
     @commands.command(name='addevent', aliases=['addcal','增加行程','增加行事曆','新增行程','新增行事曆',"增加活動","新增活動"])

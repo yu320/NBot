@@ -8,13 +8,14 @@ import asyncio
 import random # <--- ✅ 1. 新增 random 模組
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+import logging # <--- ✅ 1. 在此加入 logging 模組
 
 # --- 引入用於獲取影片/歌曲標題的函式庫 ---
 try:
     import yt_dlp 
 except ImportError:
     # 如果未安裝，則設置為 None
-    print("警告：yt-dlp 未安裝。無法自動獲取音樂標題。")
+    logging.warning("警告：yt-dlp 未安裝。無法自動獲取音樂標題。")
     yt_dlp = None
 # -----------------------------------------------
 
@@ -171,7 +172,7 @@ class Music(Cog_Extension):
             self.music_channel_id = int(MUSIC_CHANNEL_ID) if MUSIC_CHANNEL_ID else None
         except ValueError:
             self.music_channel_id = None
-            print("警告：MUSIC_CHANNEL_ID 環境變數設定錯誤，請確保它是頻道 ID 的數字。")
+            logging.warning("警告：MUSIC_CHANNEL_ID 環境變數設定錯誤，請確保它是頻道 ID 的數字。")
 
         # 確保音樂清單檔案存在
         if not os.path.exists(MUSIC_FILE):
@@ -183,7 +184,7 @@ class Music(Cog_Extension):
             with open(MUSIC_FILE, 'r', encoding='utf8') as f:
                 return json.load(f)
         except Exception as e:
-            print(f"載入音樂清單失敗: {e}")
+            logging.error(f"載入音樂清單失敗: {e}")
             return []
 
     def _save_music_list(self, music_list):
@@ -193,7 +194,7 @@ class Music(Cog_Extension):
             with open(MUSIC_FILE, 'w', encoding='utf8') as f:
                 json.dump(music_list, f, indent=4, ensure_ascii=False)
         except Exception as e:
-            print(f"儲存音樂清單失敗: {e}")
+            logging.error(f"儲存音樂清單失敗: {e}")
             
     # =========================================================
     # ✅ 指令錯誤處理函式 (提供清晰的語法教學)
@@ -261,7 +262,7 @@ class Music(Cog_Extension):
                  await self.bot.on_command_error(ctx, error)
             else:
                  # 如果沒有 other 監聽器，則引發錯誤
-                 print(f"Unhandled error in {ctx.command}: {error}")
+                 logging.error(f"Unhandled error in {ctx.command}: {error}")
 
 
     # --- 訊息監聽 (防止遺漏) ---

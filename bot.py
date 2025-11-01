@@ -1,10 +1,11 @@
 import discord
 from discord.ext import commands, tasks
-import json # 雖然您不再使用 setting.json，但這個 import 仍然保留，以防您在其他地方使用
+import json
 import asyncio
 import os
 import requests
 from dotenv import load_dotenv # 引入 load_dotenv
+import logging # 引入 logging 模組
 
 # --- 讀取 .env 檔案 ---
 load_dotenv()
@@ -46,9 +47,9 @@ async def send_heartbeat():
         try:
             # 使用 requests 發送 GET 請求 (在單獨線程中運行以避免阻塞)
             await asyncio.to_thread(requests.get, UPTIME_KUMA_URL, timeout=10)
-            # print(f"Heartbeat sent successfully to Uptime Kuma.") # 可以取消註釋來檢查
+            # logging.info("Heartbeat sent successfully to Uptime Kuma.") # (可選)
         except Exception as e:
-            print(f"Failed to send heartbeat to Uptime Kuma: {e}")
+            logging.warning(f"Failed to send heartbeat to Uptime Kuma: {e}") # ✅ 2. print 改 logging
 
 
 # --- 啟動擴展模組 (保持不變) ---
@@ -60,17 +61,20 @@ async def load_extensions(bot):
             if filename.endswith(".py"):
                 try:
                     await bot.load_extension(f'cmds.{filename[:-3]}')
-                    print(f'Loaded extension: {filename[:-3]}')
+                    # ✅ 3. print 改 logging
+                    logging.info(f'Loaded extension: {filename[:-3]}')
                 except Exception as e:
-                    print(f'Failed to load extension {filename[:-3]}: {e}')
+                    # ✅ 4. print 改 logging
+                    logging.error(f'Failed to load extension {filename[:-3]}: {e}')
     else:
-        print("The 'cmds' directory does not exist.")
+        # ✅ 5. print 改 logging
+        logging.error("The 'cmds' directory does not exist.")
 
 
 @bot.event # 讓機器人上線並提示
 async def on_ready():
     """機器人準備就緒時執行的事件"""
-    print(">> bot is online <<")
+    logging.info(">> bot is online <<")
     
     # # 1. 發送 Discord 頻道上線通知 (確保 CHANNEL_ID 存在)
     if CHANNEL_ID:
@@ -78,15 +82,20 @@ async def on_ready():
         if channel:
             await channel.send('我上線了 汪!')
         else:
-            print(f"Warning: Channel ID {CHANNEL_ID} not found.")
+            logging.warning(f"Channel ID {CHANNEL_ID} not found.")
 
     # 2. 啟動 Uptime Kuma 心跳任務
     if UPTIME_KUMA_URL and not send_heartbeat.is_running():
         send_heartbeat.start()
-        print("Uptime Kuma heartbeat task started.")
+        # ✅ 7. print 改 logging
+        logging.info("Uptime Kuma heartbeat task started.")
 
 
 if __name__ == "__main__":
+    # ✅ 8. 設定 logging 的基本配置
+    # 這樣您的日誌才會顯示 INFO 等級
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
     # 確保 Token 存在再啟動
     if DISCORD_TOKEN:
         # 加載擴展模組
@@ -94,5 +103,5 @@ if __name__ == "__main__":
         # 啟動機器人
         bot.run(DISCORD_TOKEN)
     else:
-        # ✅ 修正點：移除了 else: 和 print: 之間的空白行
-        print("Error: DISCORD_TOKEN not found in environment variables. Bot startup aborted.")
+        # ✅ 9. print 改 logging
+        logging.critical("Error: DISCORD_TOKEN not found in environment variables. Bot startup aborted.")
