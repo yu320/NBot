@@ -19,7 +19,7 @@ class Calendar(commands.Cog):
 
     @commands.command(name='addevent', aliases=['addcal'])
     # 建議加上權限限制，例如：只有管理員能用
-    @commands.has_permissions(administrator=True) 
+    # @commands.has_permissions(administrator=True) 
     async def add_calendar_event(self, ctx, date_time: str, title: str, duration: int = 60, calendar_key: str = "default"):
         """
         新增一個 Google 日曆活動到 GAS Web App。
