@@ -183,6 +183,48 @@ class Music(Cog_Extension):
         except Exception as e:
             print(f"儲存音樂清單失敗: {e}")
             
+    # =========================================================
+    # ✅ 指令錯誤處理函式 (提供清晰的語法教學)
+    # =========================================================
+    @commands.Cog.listener()
+    async def on_command_error(self, ctx, error):
+        # 確保只處理 musiclist 或 importmusic 相關的指令錯誤
+        if ctx.command and ctx.command.name in ['musiclist', '音樂清單', '清單', 'importmusic', '匯入音樂', '抓取紀錄']:
+            
+            # 參數類型錯誤 (例如: 頁碼或 limit 不是數字)
+            if isinstance(error, commands.BadArgument):
+                
+                # 針對 #musiclist 頁碼錯誤
+                if ctx.command.name in ['musiclist', '音樂清單', '清單']:
+                     await ctx.send(
+                        f"⚠️ **參數類型錯誤：** `頁碼` 必須是**數字**！\n\n"
+                        f"**👉 正確格式：**\n"
+                        f"`{ctx.prefix}{ctx.command.name} [頁碼]`\n"
+                        f"**範例：** `{ctx.prefix}{ctx.command.name} 3`"
+                    )
+                
+                # 針對 #importmusic limit 錯誤
+                elif ctx.command.name in ['importmusic', '匯入音樂', '抓取紀錄']:
+                    await ctx.send(
+                        f"⚠️ **參數類型錯誤：** `要檢查的訊息數量` 必須是**數字**！\n\n"
+                        f"**👉 正確格式：**\n"
+                        f"`{ctx.prefix}{ctx.command.name} [要檢查的訊息數量]`\n"
+                        f"**範例：** `{ctx.prefix}{ctx.command.name} 1000` (預設 500)"
+                    )
+                
+            # 忽略其他錯誤，讓它繼續傳播
+            else:
+                pass
+        
+        else:
+            # 讓其他指令的錯誤繼續由 bot.py 或其他 Cog 處理
+            if self.bot.extra_events.get('on_command_error', None) is not None:
+                 await self.bot.on_command_error(ctx, error)
+            else:
+                 # 如果沒有其他監聽器，則引發錯誤
+                 print(f"Unhandled error in {ctx.command}: {error}")
+
+
     # --- 訊息監聽 (防止遺漏) ---
     @commands.Cog.listener()
     async def on_message(self, msg):
@@ -264,11 +306,11 @@ class Music(Cog_Extension):
         指令格式: #importmusic [要檢查的訊息數量] (預設 500 筆)
         """
         if not self.music_channel_id:
-            return await ctx.send("❌ 錯誤：未設定 MUSIC_CHANNEL_ID，無法執行匯入。請聯繫管理員設定。")
+            return await ctx.send("❌ 錯誤：未設定 MUSIC_CHANNEL_ID，無法執行匯入。請聯繫管理員設定。", delete_after=15)
         
         target_channel = self.bot.get_channel(self.music_channel_id)
         if not target_channel:
-            return await ctx.send("❌ 錯誤：找不到指定的音樂分享頻道。")
+            return await ctx.send("❌ 錯誤：找不到指定的音樂分享頻道。", delete_after=15)
 
         await ctx.defer() # 延遲回覆，因為這個操作可能會花很長時間
         
@@ -316,7 +358,7 @@ class Music(Cog_Extension):
 
         await ctx.followup.send(f"✅ 歷史紀錄匯入完成！已檢查最近 **{limit}** 筆訊息，並成功匯入 **{imported_count}** 個新的音樂連結。", ephemeral=False)
 
-    # ⚠️ 移除 on_command_error 對 CheckFailure 的處理，因為權限已開放給所有人
+    # ⚠️ 移除 on_command_error 對 CheckFailure 的處理
 
 async def setup(bot):
     await bot.add_cog(Music(bot))
