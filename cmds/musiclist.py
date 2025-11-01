@@ -264,7 +264,8 @@ class Music(Cog_Extension):
                     await msg.channel.send(f"✅ 已將音樂 `{title}` (分享者: {msg.author.display_name}) 儲存。", delete_after=8)
                     
         # 確保指令仍然可以執行
-        await self.bot.process_commands(msg)
+        # await self.bot.process_commands(msg) # <- 修正點：註解或刪除此行以避免重複回應
+        
 
     # --- 指令：顯示清單 (使用按鈕分頁) ---
     @commands.command(name='musiclist', aliases=['音樂清單', '清單'])
@@ -312,6 +313,7 @@ class Music(Cog_Extension):
         if not target_channel:
             return await ctx.send("❌ 錯誤：找不到指定的音樂分享頻道。", delete_after=15)
 
+        # 這裡會顯示「正在思考...」
         await ctx.defer() # 延遲回覆，因為這個操作可能會花很長時間
         
         music_list = self._load_music_list()
@@ -355,7 +357,7 @@ class Music(Cog_Extension):
              music_list.sort(key=lambda x: datetime.fromisoformat(x['timestamp']), reverse=True)
              self._save_music_list(music_list)
 
-
+        # 這裡會顯示「完成」的訊息
         await ctx.followup.send(f"✅ 歷史紀錄匯入完成！已檢查最近 **{limit}** 筆訊息，並成功匯入 **{imported_count}** 個新的音樂連結。", ephemeral=False)
 
     # ⚠️ 移除 on_command_error 對 CheckFailure 的處理

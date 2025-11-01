@@ -96,5 +96,3 @@ if __name__ == "__main__":
     else:
 
         print("Error: DISCORD_TOKEN not found in environment variables. Bot startup aborted.")
-
-
