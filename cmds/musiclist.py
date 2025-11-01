@@ -18,7 +18,7 @@ except ImportError:
 # -----------------------------------------------
 
 # 定義常量
-MUSIC_FILE = 'music_list.json'
+MUSIC_FILE = './data/music_list.json'
 MUSIC_CHANNEL_ID = os.getenv('MUSIC_CHANNEL_ID')
 # 移除 MUSIC_IMPORT_ROLE_NAME 相關邏輯，將權限開放給所有人
 ITEMS_PER_PAGE = 10 
@@ -184,7 +184,7 @@ class Music(Cog_Extension):
             print(f"儲存音樂清單失敗: {e}")
             
     # =========================================================
-    # ✅ 指令錯誤處理函式 (保持不變)
+    # ✅ 指令錯誤處理函式 (提供清晰的語法教學)
     # =========================================================
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -225,7 +225,7 @@ class Music(Cog_Extension):
                  print(f"Unhandled error in {ctx.command}: {error}")
 
 
-    # --- 訊息監聽 (保持不變) ---
+    # --- 訊息監聽 (防止遺漏) ---
     @commands.Cog.listener()
     async def on_message(self, msg):
         # 忽略機器人自己的訊息和私訊
@@ -297,8 +297,9 @@ class Music(Cog_Extension):
         await ctx.send(embed=embed, view=view)
 
 
-    # --- 指令：匯入歷史紀錄 (新增「抓取中」回應) ---
+    # --- 指令：匯入歷史紀錄 (開放給所有人使用) ---
     @commands.command(name='importmusic', aliases=['匯入音樂', '抓取紀錄'])
+    # ⚠️ 移除 @commands.check(check_import_permission)，開放給所有人
     async def import_previous_records(self, ctx, limit: int = 500):
         """
         匯入音樂頻道中尚未紀錄的歷史連結。
@@ -311,14 +312,9 @@ class Music(Cog_Extension):
         if not target_channel:
             return await ctx.send("❌ 錯誤：找不到指定的音樂分享頻道。", delete_after=15)
 
-        # 1. 延遲回覆，讓 Discord 知道操作正在進行
-        await ctx.defer() 
+        # 這裡會顯示「正在思考...」
+        await ctx.defer() # 延遲回覆，因為這個操作可能會花很長時間
         
-        # 2. ⬇️ 新增：發送一個明確的「抓取中」回應 ⬇️
-        # 這會替換 Discord 的「機器人正在思考...」訊息
-        await ctx.followup.send(f"🔎 開始檢查音樂頻道中最新的 **{limit}** 則訊息。請稍候，這可能需要一些時間。", ephemeral=False) 
-
-        # ... (抓取邏輯開始) ...
         music_list = self._load_music_list()
         existing_urls = {entry['url'] for entry in music_list}
         
@@ -360,10 +356,10 @@ class Music(Cog_Extension):
              music_list.sort(key=lambda x: datetime.fromisoformat(x['timestamp']), reverse=True)
              self._save_music_list(music_list)
 
-
-        # 3. ⬇️ 最後的成功回應 ⬇️
-        # 這是第二個 followup 訊息，會以新的訊息顯示在頻道中
+        # 這裡會顯示「完成」的訊息
         await ctx.followup.send(f"✅ 歷史紀錄匯入完成！已檢查最近 **{limit}** 筆訊息，並成功匯入 **{imported_count}** 個新的音樂連結。", ephemeral=False)
+
+    # ⚠️ 移除 on_command_error 對 CheckFailure 的處理
 
 async def setup(bot):
     await bot.add_cog(Music(bot))
