@@ -72,13 +72,13 @@ async def on_ready():
     """機器人準備就緒時執行的事件"""
     print(">> bot is online <<")
     
-    # 1. 發送 Discord 頻道上線通知 (確保 CHANNEL_ID 存在)
-    if CHANNEL_ID:
-        channel = bot.get_channel(int(CHANNEL_ID))
-        if channel:
-            await channel.send('我上線了 汪!')
-        else:
-            print(f"Warning: Channel ID {CHANNEL_ID} not found.")
+    # # 1. 發送 Discord 頻道上線通知 (確保 CHANNEL_ID 存在)
+    # if CHANNEL_ID:
+    #     channel = bot.get_channel(int(CHANNEL_ID))
+    #     if channel:
+    #         await channel.send('我上線了 汪!')
+    #     else:
+    #         print(f"Warning: Channel ID {CHANNEL_ID} not found.")
 
     # 2. 啟動 Uptime Kuma 心跳任務
     if UPTIME_KUMA_URL and not send_heartbeat.is_running():
