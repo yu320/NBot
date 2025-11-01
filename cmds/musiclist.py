@@ -217,11 +217,11 @@ class Music(Cog_Extension):
                 pass
         
         else:
-            # 讓其他指令的錯誤繼續由 bot.py 或其他 Cog 處理
+            # 讓 other 指令的錯誤繼續由 bot.py 或 other Cog 處理
             if self.bot.extra_events.get('on_command_error', None) is not None:
                  await self.bot.on_command_error(ctx, error)
             else:
-                 # 如果沒有其他監聽器，則引發錯誤
+                 # 如果沒有 other 監聽器，則引發錯誤
                  print(f"Unhandled error in {ctx.command}: {error}")
 
 
@@ -263,8 +263,9 @@ class Music(Cog_Extension):
                     
                     await msg.channel.send(f"✅ 已將音樂 `{title}` (分享者: {msg.author.display_name}) 儲存。", delete_after=8)
                     
-        # 確保指令仍然可以執行
-        # await self.bot.process_commands(msg) # <- 修正點：註解或刪除此行以避免重複回應
+        # 
+        # ✅ 修正點 (1)： 註解或刪除此行以避免 #musiclist 重複回應
+        # await self.bot.process_commands(msg)
         
 
     # --- 指令：顯示清單 (使用按鈕分頁) ---
@@ -313,41 +314,65 @@ class Music(Cog_Extension):
         if not target_channel:
             return await ctx.send("❌ 錯誤：找不到指定的音樂分享頻道。", delete_after=15)
 
-        # 這裡會顯示「正在思考...」
-        await ctx.defer() # 延遲回覆，因為這個操作可能會花很長時間
-        
+        #
+        # ✅ 修正點 (2)：
+        # 1. 移除 await ctx.defer()
+        # 2. 改為 ctx.send() 來發送「抓取中」訊息，並將該訊息存到變數 'msg' 中
+        #
+        try:
+            # 發送「抓取中」的提示訊息
+            msg = await ctx.send(f"⏳ 正在檢查最近 **{limit}** 筆歷史訊息，請稍候...")
+        except discord.errors.Forbidden:
+            # 如果機器人沒有發言權限，就在日誌中提示，並停止
+            print(f"錯誤：機器人無法在頻道 {target_channel.name} 中發送訊息。")
+            return
+
         music_list = self._load_music_list()
         existing_urls = {entry['url'] for entry in music_list}
         
         imported_count = 0
+        checked_count = 0 # 新增計數器以回報實際檢查數量
         
-        # 透過 channel.history 迭代抓取訊息
-        async for msg in target_channel.history(limit=limit, oldest_first=True):
-            if msg.author == self.bot.user:
-                continue
+        try:
+            # 透過 channel.history 迭代抓取訊息
+            # (變數 'message' 避免與 'msg' 衝突)
+            async for message in target_channel.history(limit=limit, oldest_first=True):
+                checked_count += 1
+                if message.author == self.bot.user:
+                    continue
 
-            url_regex = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
-            urls = re.findall(url_regex, msg.content)
-            
-            for url in urls:
-                if url not in existing_urls:
-                    # 避免在主線程中等待標題獲取
-                    title = await asyncio.to_thread(_get_video_title, url)
-                    
-                    music_entry = {
-                        "title": title, 
-                        "url": url,
-                        "posted_by": msg.author.display_name,
-                        "timestamp": msg.created_at.isoformat() # 使用歷史訊息的發送時間
-                    }
-                    
-                    music_list.append(music_entry) 
-                    existing_urls.add(url)
-                    imported_count += 1
-                    
-                    # 為了避免頻繁寫入檔案，每 20 筆儲存一次
-                    if imported_count % 20 == 0:
-                        self._save_music_list(music_list)
+                url_regex = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+                urls = re.findall(url_regex, message.content)
+                
+                for url in urls:
+                    if url not in existing_urls:
+                        # 避免在主線程中等待標題獲取
+                        title = await asyncio.to_thread(_get_video_title, url)
+                        
+                        music_entry = {
+                            "title": title, 
+                            "url": url,
+                            "posted_by": message.author.display_name,
+                            "timestamp": message.created_at.isoformat() # 使用歷史訊息的發送時間
+                        }
+                        
+                        music_list.append(music_entry) 
+                        existing_urls.add(url)
+                        imported_count += 1
+                        
+                        # 為了避免頻繁寫入檔案，每 20 筆儲存一次
+                        if imported_count % 20 == 0:
+                            self._save_music_list(music_list)
+
+        except discord.errors.Forbidden:
+            # ✅ 修正點 (2)：改用 msg.edit() 來回報權限錯誤
+            await msg.edit(content=f"❌ **權限錯誤：** 機器人沒有權限讀取此頻道的**訊息歷史 (Read Message History)**！請檢查 Discord 頻道權限設定。")
+            return
+        except Exception as e:
+            # ✅ 修正點 (2)：改用 msg.edit() 來回報其他錯誤
+            await msg.edit(content=f"❌ 發生未知錯誤: {e}")
+            return
+
 
         # 最終儲存所有變更
         self._save_music_list(music_list)
@@ -357,8 +382,12 @@ class Music(Cog_Extension):
              music_list.sort(key=lambda x: datetime.fromisoformat(x['timestamp']), reverse=True)
              self._save_music_list(music_list)
 
-        # 這裡會顯示「完成」的訊息
-        await ctx.followup.send(f"✅ 歷史紀錄匯入完成！已檢查最近 **{limit}** 筆訊息，並成功匯入 **{imported_count}** 個新的音樂連結。", ephemeral=False)
+        #
+        # ✅ 修正點 (2)：
+        # 1. 移除 await ctx.followup.send()
+        # 2. 改為 msg.edit() 來「編輯」先前發送的「抓取中」訊息，更新為「完成」
+        #
+        await msg.edit(content=f"✅ 歷史紀錄匯入完成！已檢查 **{checked_count} / {limit}** 筆訊息，並成功匯入 **{imported_count}** 個新的音樂連結。")
 
     # ⚠️ 移除 on_command_error 對 CheckFailure 的處理
 
