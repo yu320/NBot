@@ -25,10 +25,10 @@ WORKDIR /app
 # 將 requirements.txt 複製到工作目錄
 # 假設您已在專案根目錄創建了 requirements.txt
 COPY requirements.txt .
-
 # 安裝 Python 依賴
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt --no-cache-dir
+    pip install -r requirements.txt --no-cache-dir && \
+    pip install --upgrade yt-dlp
 
 
 # ----------------------------------------------------
@@ -57,7 +57,8 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # 複製您的專案程式碼
 # 注意：這會將整個專案目錄複製到容器內
-COPY . .
+COPY .
+.
 
 # 暴露的環境變數 (在 TrueNAS/Docker run 時必須傳入)
 # 雖然不需要 EXPOSE 指令，但在註釋中提醒需要設定 ENV
