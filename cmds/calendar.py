@@ -17,7 +17,7 @@ class Calendar(commands.Cog):
         if not self.gas_api_url:
             print("警告：CALENDAR_API_URL 環境變數未設定，日曆新增功能將無法運作。")
 
-    @commands.command(name='addevent', aliases=['addcal'])
+    @commands.command(name='addevent', aliases=['addcal','增加行程','增加行事曆','新增行程','新增行事曆',"增加活動","新增活動"])
     # 建議加上權限限制，例如：只有管理員能用
     # @commands.has_permissions(administrator=True) 
     async def add_calendar_event(self, ctx, date_time: str, title: str, duration: int = 60, calendar_key: str = "default"):
