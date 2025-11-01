@@ -26,3 +26,4 @@ setting.json
 # 忽略 Python 編譯後的檔案和資料夾
 __pycache__/
 *.pyc
+GAS
