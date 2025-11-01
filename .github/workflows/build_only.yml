@@ -3,7 +3,7 @@ name: CI Build and Push Docker Image
 on:
   push:
     branches:
-      - main
+      - m
     paths:
       # 保持觸發路徑不變
       - 'src/**'
