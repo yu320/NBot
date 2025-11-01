@@ -1,9 +1,9 @@
 import discord
 from discord.ext import commands
-from core.classes import Cog_Extension
+from core.classes import Cog_Extension 
 import os
 import requests
-import asyncio
+import asyncio 
 
 class Calendar(commands.Cog):
     
@@ -17,7 +17,7 @@ class Calendar(commands.Cog):
             print("警告：CALENDAR_API_URL 環境變數未設定，日曆新增功能將無法運作。")
 
     # =========================================================
-    # ✅ 新增：指令錯誤處理函式 (提供清晰的語法教學)
+    # ✅ 指令錯誤處理函式 (提供清晰的語法教學)
     # =========================================================
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -50,11 +50,15 @@ class Calendar(commands.Cog):
                 pass
         else:
             # 讓其他指令的錯誤繼續由 bot.py 或其他 Cog 處理
-            await self.bot.on_command_error(ctx, error)
+            # 這裡使用 self.bot.on_command_error 避免無限遞迴
+            if self.bot.extra_events.get('on_command_error', None) is not None:
+                 await self.bot.on_command_error(ctx, error)
+            else:
+                 raise error
 
 
     @commands.command(name='addevent', aliases=['addcal','增加行程','增加行事曆','新增行程','新增行事曆',"增加活動","新增活動"])
-    # 建議加上權限限制，例如：只有管理員能用
+    # 權限檢查已註釋掉，讓一般用戶也能使用
     # @commands.has_permissions(administrator=True) 
     async def add_calendar_event(self, ctx, date_time: str, title: str, duration: int = 60, calendar_key: str = "default"):
         """
