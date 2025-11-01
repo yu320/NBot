@@ -94,6 +94,5 @@ if __name__ == "__main__":
         # 啟動機器人
         bot.run(DISCORD_TOKEN)
     else:
-
-
         print("Error: DISCORD_TOKEN not found in environment variables. Bot startup aborted.")
+
