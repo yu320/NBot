@@ -39,9 +39,9 @@ class Main(Cog_Extension):
             
             # 為了避免在刪除指令訊息時出現錯誤，我們直接發送成功訊息
             await ctx.send(f"成功刪除 {len(deleted) - 1} 條訊息囉!")
-            
-            # 在命令中使用 asyncio.sleep() 來暫停 5 秒
-            await asyncio.sleep(5)
+
+            # 在命令中使用 asyncio.sleep() 來暫停 8 秒
+            await asyncio.sleep(8)
             
             # 刪除成功提示訊息
             await ctx.channel.purge(limit = 1)

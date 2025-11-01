@@ -72,7 +72,7 @@ async def on_ready():
     """機器人準備就緒時執行的事件"""
     print(">> bot is online <<")
     
-    # 1. 發送 Discord 頻道上線通知 (確保 CHANNEL_ID 存在)
+    # # 1. 發送 Discord 頻道上線通知 (確保 CHANNEL_ID 存在)
     if CHANNEL_ID:
         channel = bot.get_channel(int(CHANNEL_ID))
         if channel:

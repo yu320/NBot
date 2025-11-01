@@ -10,4 +10,5 @@ services:
       - DISCORD_TOKEN=${TOKEN}
       - CHANNEL_ID=${CHAN_ID}
       - UPTIME_KUMA_URL=${KUMA_URL}
+      - CALENDAR_API_URL=${CAL_API_URL}
 networks: {}

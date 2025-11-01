@@ -1,0 +1,60 @@
+name: Manual Redeployment to TrueNAS (No Build)
+
+on:
+  # 關鍵：只允許手動觸發 (Run workflow)
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: '手動部署原因 (例如：只需重啟服務)'
+        required: false
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read 
+
+    env:
+      IMAGE_NAME: nbot-discord
+      # 複製 GHCR_REPO 變數，用於 docker pull
+      GHCR_REPO: ghcr.io/${{ github.repository_owner }}/nbot-discord 
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        # 這裡我們仍建議保留 checkout，因為 docker pull 和 compose up 需要存取 compose.yaml 所在的目錄。
+      
+      # 【*** 移除 Log in, Set up Buildx, Build and Push 步驟 ***】
+      
+      - name: Deploy to TrueNAS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        
+        # 這些環境變數是給遠端 TrueNAS 機器上的 docker compose up -d 使用的
+        env:
+          TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          CHAN_ID: ${{ secrets.CHANNEL_ID }}
+          KUMA_URL: ${{ secrets.UPTIME_KUMA_URL }}
+
+        with:
+          host: ${{ secrets.TRUENAS_HOST }}
+          username: ${{ secrets.TRUENAS_USER }}
+          key: ${{ secrets.TRUENAS_SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }} 
+          
+          script: |
+            # 導航到您的 docker-compose.yml 檔案所在的目錄
+            cd /mnt/nas/apps/Dockge/Stacks/discord_bot/
+            
+            echo "--- 1. 拉取最新映像檔 (從 GHCR) ---"
+            # 重新拉取 GHCR 上的最新版 (latest tag)
+            docker pull ${{ env.GHCR_REPO }}:latest
+            
+            echo "--- 2. 使用 docker compose 重新啟動服務 ---"
+            # compose.yaml 會使用環境變數 TOKEN, CHAN_ID, KUMA_URL
+            docker compose up -d
+
+            echo "--- 3. 清理舊映像檔 (可選) ---"
+            docker image prune -f
+
+            echo "--- 4. 部署完成 ---"
