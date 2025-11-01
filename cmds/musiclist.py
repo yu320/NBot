@@ -18,7 +18,7 @@ except ImportError:
 # -----------------------------------------------
 
 # 定義常量
-MUSIC_FILE = 'music_list.json'
+MUSIC_FILE = './data/music_list.json'
 MUSIC_CHANNEL_ID = os.getenv('MUSIC_CHANNEL_ID')
 # 移除 MUSIC_IMPORT_ROLE_NAME 相關邏輯，將權限開放給所有人
 ITEMS_PER_PAGE = 10 
