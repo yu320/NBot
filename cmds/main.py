@@ -5,12 +5,12 @@ import datetime
 import asyncio
 # import json # 不再需要，可以移除
 import os # 新增，用於讀取環境變數
+import logging # ✅ 1. 引入 logging 模組
 
 # with open('Nbot\\setting.json', 'r', encoding = 'utf8') as jfile: # 移除此行
 #     jdata = json.load(jfile) # 移除此行
 
 # 從環境變數讀取 CHANNEL_ID
-# 確保您的 .env 檔案中有 CHANNEL_ID="YOUR_CHANNEL_ID"
 TALK_CHANNEL_ID = os.getenv('CHANNEL_ID')
 
 
@@ -52,6 +52,47 @@ class Main(Cog_Extension):
                 await ctx.send(f"指令要在{talk_channel.mention}才可以用啦 汪!") 
             else:
                 await ctx.send(f"指令要在機器人頻道才可以用啦 汪!")
+
+
+    # ✅ 2. 新增 on_command_error 錯誤監聽器
+    @commands.Cog.listener()
+    async def on_command_error(self, ctx, error):
+        
+        # 優先記錄所有進入此 Cog 的錯誤
+        logging.warning(f"Main Cog 捕獲到指令錯誤 (Command: {ctx.command}, Error: {error})")
+
+        # 確保只處理 'clean' 和 'ping' 相關的指令錯誤
+        if ctx.command and ctx.command.name in ['clean', 'ping']:
+            
+            # 處理 #clean 遺漏 'num' 參數的錯誤
+            if isinstance(error, commands.MissingRequiredArgument):
+                if ctx.command.name == 'clean':
+                    await ctx.send(
+                        f"⚠️ **參數遺漏錯誤：** 您忘記提供 `要刪除的數量` 參數了！\n\n"
+                        f"**👉 正確格式：**\n"
+                        f"`#clean [數量]`\n"
+                        f"**範例：** `#clean 10`"
+                    )
+            
+            # 處理 #clean 'num' 參數不是數字的錯誤
+            elif isinstance(error, commands.BadArgument):
+                if ctx.command.name == 'clean':
+                    await ctx.send(
+                        f"⚠️ **參數類型錯誤：** `數量` 必須是**數字**！\n"
+                        f"**範例：** `#clean 10`"
+                    )
+            
+            # 其他錯誤（例如權限不足）將被忽略，並交由 bot.py 的全域處理器記錄
+            else:
+                pass
+        
+        else:
+            # 讓其他指令的錯誤繼續由 bot.py 或其他 Cog 處理
+            if self.bot.extra_events.get('on_command_error', None) is not None:
+                 await self.bot.on_command_error(ctx, error)
+            else:
+                 # 如果沒有其他監聽器，則引發錯誤
+                 logging.error(f"Unhandled error in {ctx.command}: {error}")
 
 
 async def setup(bot):
