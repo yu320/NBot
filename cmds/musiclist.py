@@ -5,10 +5,11 @@ import json
 import os
 import re
 import asyncio
-import random # <--- ✅ 1. 新增 random 模組
+import random 
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-import logging # <--- ✅ 1. 在此加入 logging 模組
+import logging 
+from discord import app_commands # ✅ 引入 app_commands
 
 # --- 引入用於獲取影片/歌曲標題的函式庫 ---
 try:
@@ -59,14 +60,14 @@ def _create_music_list_embed(
     total_pages: int, 
     total_items: int,
     start_index: int,
-    title: str = "🎶 頻道音樂分享清單" # <--- ✅ 2. 讓標題可以自訂
+    title: str = "🎶 頻道音樂分享清單" 
 ) -> discord.Embed:
     """根據分頁資料建立 Embed"""
     
     current_page_items = music_list[start_index : start_index + ITEMS_PER_PAGE]
     
     embed = discord.Embed(
-        title=title, # <--- ✅ 2. 使用傳入的標題
+        title=title, 
         description=f"總計 {total_items} 筆紀錄。顯示第 **{page} / {total_pages}** 頁。",
         color=0x1DB954 # Spotify 綠色
     )
@@ -110,12 +111,11 @@ class MusicListView(discord.ui.View):
         self.ctx = ctx
         self.total_pages = total_pages
         self.current_page = initial_page
-        self.embed_title = embed_title # <--- ✅ 3. 儲存標題供翻頁時使用
+        self.embed_title = embed_title 
         self.update_buttons()
 
     def update_buttons(self):
         """根據當前頁碼啟用/禁用按鈕"""
-        # 如果只有一頁或沒有頁面，禁用所有按鈕
         if self.total_pages <= 1:
             self.children[0].disabled = True
             self.children[1].disabled = True
@@ -144,7 +144,7 @@ class MusicListView(discord.ui.View):
             start_index = self._get_page_params()
             embed = _create_music_list_embed(
                 self.music_list, self.current_page, self.total_pages, len(self.music_list), start_index,
-                title=self.embed_title # <--- ✅ 3. 翻頁時傳入標題
+                title=self.embed_title
             )
             await interaction.response.edit_message(embed=embed, view=self)
 
@@ -157,7 +157,7 @@ class MusicListView(discord.ui.View):
             start_index = self._get_page_params()
             embed = _create_music_list_embed(
                 self.music_list, self.current_page, self.total_pages, len(self.music_list), start_index,
-                title=self.embed_title # <--- ✅ 3. 翻頁時傳入標題
+                title=self.embed_title
             )
             await interaction.response.edit_message(embed=embed, view=self)
 
@@ -167,14 +167,12 @@ class Music(Cog_Extension):
 
     def __init__(self, bot):
         super().__init__(bot)
-        # 確保 MUSIC_CHANNEL_ID 已設定
         try:
             self.music_channel_id = int(MUSIC_CHANNEL_ID) if MUSIC_CHANNEL_ID else None
         except ValueError:
             self.music_channel_id = None
             logging.warning("警告：MUSIC_CHANNEL_ID 環境變數設定錯誤，請確保它是頻道 ID 的數字。")
 
-        # 確保音樂清單檔案存在
         if not os.path.exists(MUSIC_FILE):
             self._save_music_list([])
             
@@ -190,19 +188,27 @@ class Music(Cog_Extension):
     def _save_music_list(self, music_list):
         """將音樂清單存入檔案"""
         try:
-            # 使用 ensure_ascii=False 以正確儲存中文
             with open(MUSIC_FILE, 'w', encoding='utf8') as f:
                 json.dump(music_list, f, indent=4, ensure_ascii=False)
         except Exception as e:
             logging.error(f"儲存音樂清單失敗: {e}")
             
     # =========================================================
-    # ✅ 指令錯誤處理函式 (提供清晰的語法教學)
+    # ✅ 指令錯誤處理函式 (已修正重複報錯)
     # =========================================================
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
-        # ✅ 4. 更新錯誤處理的指令清單
-        # 確保只處理 music 相關的指令錯誤
+        
+        # ✅ 關鍵修正：如果指令不屬於 'Music' Cog，就直接退出
+        if ctx.command and ctx.command.cog_name != 'Music':
+            return
+            
+        logging.warning(f"MusicList Cog 捕獲到指令錯誤 (Command: {ctx.command}, Error: {error})")
+
+        # 檢查是否為私人回覆
+        is_private = ctx.interaction is not None
+
+        # (只處理 Music Cog 自己的指令錯誤)
         if ctx.command and ctx.command.name in [
             'musiclist', '音樂清單', '清單', 
             'importmusic', '匯入音樂', '抓取紀錄',
@@ -211,64 +217,36 @@ class Music(Cog_Extension):
             'randomsong', '隨機音樂', 'randommusic'
         ]:
             
-            # 參數類型錯誤 (例如: 頁碼或 limit/編號 不是數字)
             if isinstance(error, commands.BadArgument):
-                
-                # 針對 #musiclist 頁碼錯誤
+                error_message = f"⚠️ **參數類型錯誤！**"
                 if ctx.command.name in ['musiclist', '音樂清單', '清單']:
-                     await ctx.send(
-                        f"⚠️ **參數類型錯誤：** `頁碼` 必須是**數字**！\n\n"
-                        f"**👉 正確格式：**\n"
-                        f"`{ctx.prefix}{ctx.command.name} [頁碼]`\n"
-                        f"**範例：** `{ctx.prefix}{ctx.command.name} 3`"
-                    )
-                
-                # 針對 #importmusic limit 錯誤
+                     error_message = f"⚠️ **參數類型錯誤：** `頁碼` 必須是**數字**！\n👉 **範例：** `{ctx.prefix}{ctx.command.name} 3`"
                 elif ctx.command.name in ['importmusic', '匯入音樂', '抓取紀錄']:
-                    await ctx.send(
-                        f"⚠️ **參數類型錯誤：** `要檢查的訊息數量` 必須是**數字**！\n\n"
-                        f"**👉 正確格式：**\n"
-                        f"`{ctx.prefix}{ctx.command.name} [要檢查的訊息數量]`\n"
-                        f"**範例：** `{ctx.prefix}{ctx.command.name} 1000` (預設 500)"
-                    )
-                
-                # 針對 #removesong 編號錯誤
+                    error_message = f"⚠️ **參數類型錯誤：** `要檢查的訊息數量` 必須是**數字**！\n👉 **範例：** `{ctx.prefix}{ctx.command.name} 1000`"
                 elif ctx.command.name in ['removesong', '刪除音樂', 'remusic']:
-                    await ctx.send(
-                        f"⚠️ **參數類型錯誤：** `編號` 必須是**數字**！\n\n"
-                        f"**👉 正確格式：**\n"
-                        f"`{ctx.prefix}{ctx.command.name} [歌曲編號]`\n"
-                        f"**範例：** `{ctx.prefix}{ctx.command.name} 5`"
-                    )
+                    error_message = f"⚠️ **參數類型錯誤：** `編號` 必須是**數字**！\n👉 **範例：** `{ctx.prefix}{ctx.command.name} 5`"
+                await ctx.send(error_message, ephemeral=is_private)
                 
-            # 遺漏必要參數 (例如 #removesong 或 #searchmusic 沒給參數)
             elif isinstance(error, commands.MissingRequiredArgument):
                  await ctx.send(
                     f"⚠️ **參數遺漏錯誤：** 您忘記提供 `{error.param.name}` 參數了！\n"
-                    f"**範例：** `{ctx.prefix}{ctx.command.name} 123`"
+                    f"**範例：** `{ctx.prefix}{ctx.command.name} 123`",
+                    ephemeral=is_private
                 )
 
-            # ✅ 4. 新增權限不足的錯誤處理
             elif isinstance(error, commands.MissingPermissions):
-                await ctx.send("❌ **權限不足：** 您沒有權限執行此指令。", delete_after=10)
+                await ctx.send("❌ **權限不足：** 您沒有權限執行此指令。", ephemeral=is_private, delete_after=10)
 
-            # 忽略其他錯誤，讓它繼續傳播
             else:
+                # 其他錯誤 (例如 Cooldown) 會自動上報給 bot.py
                 pass
         
-        else:
-            # 讓 other 指令的錯誤繼續由 bot.py 或 other Cog 處理
-            if self.bot.extra_events.get('on_command_error', None) is not None:
-                 await self.bot.on_command_error(ctx, error)
-            else:
-                 # 如果沒有 other 監聽器，則引發錯誤
-                 logging.error(f"Unhandled error in {ctx.command}: {error}")
+        # ✅ 關鍵修正：移除了 'else' 區塊
 
 
     # --- 訊息監聽 (防止遺漏) ---
     @commands.Cog.listener()
     async def on_message(self, msg):
-        # (此函式保持不變，修正也保留)
         if msg.author == self.bot.user or msg.guild is None:
             return
         
@@ -297,20 +275,21 @@ class Music(Cog_Extension):
                     
                     await msg.channel.send(f"✅ 已將音樂 `{title}` (分享者: {msg.author.display_name}) 儲存。", delete_after=8)
                     
-        # await self.bot.process_commands(msg) # (保持註解/刪除)
         
-
-    # --- 指令：顯示清單 (使用按鈕分頁) ---
-    @commands.command(name='musiclist', aliases=['音樂清單', '清單'])
-    async def show_music_list(self, ctx, page: int = 1):
+    # --- ✅ 指令：顯示清單 (轉換為 Hybrid) ---
+    @commands.hybrid_command(name='musiclist', aliases=['音樂清單', '清單'], description="顯示已記錄的音樂清單 (使用按鈕分頁)")
+    @app_commands.describe(page="要顯示的頁碼 (預設 1)")
+    async def show_music_list(self, ctx: commands.Context, page: int = 1):
         """
         顯示已記錄的音樂清單，每頁10筆，使用按鈕分頁。
         指令格式: #musiclist [頁碼]
         """
+        is_private = ctx.interaction is not None
+        
         music_list = self._load_music_list()
 
         if not music_list:
-            return await ctx.send("目前音樂清單中沒有任何紀錄。", delete_after=10)
+            return await ctx.send("目前音樂清單中沒有任何紀錄。", ephemeral=is_private)
         
         total_items = len(music_list)
         total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
@@ -322,33 +301,33 @@ class Music(Cog_Extension):
         
         embed = _create_music_list_embed(
             music_list, page, total_pages, total_items, start_index
-            # 這裡使用預設標題 "🎶 頻道音樂分享清單"
         )
         
         view = MusicListView(music_list, ctx, total_pages, page)
         
-        await ctx.send(embed=embed, view=view)
+        await ctx.send(embed=embed, view=view, ephemeral=is_private)
 
 
-    # --- 指令：匯入歷史紀錄 (開放給所有人使用) ---
-    @commands.command(name='importmusic', aliases=['匯入音樂', '抓取紀錄'])
-    async def import_previous_records(self, ctx, limit: int = 500):
+    # --- ✅ 指令：匯入歷史紀錄 (轉換為 Hybrid) ---
+    @commands.hybrid_command(name='importmusic', aliases=['匯入音樂', '抓取紀錄'], description="匯入音樂頻道中尚未紀錄的歷史連結")
+    @app_commands.describe(limit="要檢查的訊息數量 (預設 500)")
+    async def import_previous_records(self, ctx: commands.Context, limit: int = 500):
         """
         匯入音樂頻道中尚未紀錄的歷史連結。
         指令格式: #importmusic [要檢查的訊息數量] (預設 500 筆)
         """
-        # (此函式保持不變)
+        is_private = ctx.interaction is not None
+        
         if not self.music_channel_id:
-            return await ctx.send("❌ 錯誤：未設定 MUSIC_CHANNEL_ID，無法執行匯入。請聯繫管理員設定。", delete_after=15)
+            return await ctx.send("❌ 錯誤：未設定 MUSIC_CHANNEL_ID，無法執行匯入。", ephemeral=True) 
         
         target_channel = self.bot.get_channel(self.music_channel_id)
         if not target_channel:
-            return await ctx.send("❌ 錯誤：找不到指定的音樂分享頻道。", delete_after=15)
+            return await ctx.send("❌ 錯誤：找不到指定的音樂分享頻道。", ephemeral=True)
 
         try:
-            msg = await ctx.send(f"⏳ 正在檢查最近 **{limit}** 筆歷史訊息，請稍候...")
+            msg = await ctx.send(f"⏳ 正在檢查最近 **{limit}** 筆歷史訊息，請稍候...", ephemeral=is_private)
         except discord.errors.Forbidden:
-            print(f"錯誤：機器人無法在頻道 {target_channel.name} 中發送訊息。")
             return
 
         music_list = self._load_music_list()
@@ -356,6 +335,8 @@ class Music(Cog_Extension):
         
         imported_count = 0
         checked_count = 0 
+        
+        edit_content = "" # 準備回覆的內容
         
         try:
             async for message in target_channel.history(limit=limit, oldest_first=True):
@@ -385,11 +366,9 @@ class Music(Cog_Extension):
                             self._save_music_list(music_list)
 
         except discord.errors.Forbidden:
-            await msg.edit(content=f"❌ **權限錯誤：** 機器人沒有權限讀取此頻道的**訊息歷史 (Read Message History)**！請檢查 Discord 頻道權限設定。")
-            return
+            edit_content = f"❌ **權限錯誤：** 機器人沒有權限讀取此頻道的**訊息歷史 (Read Message History)**！"
         except Exception as e:
-            await msg.edit(content=f"❌ 發生未知錯誤: {e}")
-            return
+            edit_content = f"❌ 發生未知錯誤: {e}"
 
         # 最終儲存
         self._save_music_list(music_list)
@@ -398,23 +377,29 @@ class Music(Cog_Extension):
              music_list.sort(key=lambda x: datetime.fromisoformat(x['timestamp']), reverse=True)
              self._save_music_list(music_list)
 
-        await msg.edit(content=f"✅ 歷史紀錄匯入完成！已檢查 **{checked_count} / {limit}** 筆訊息，並成功匯入 **{imported_count}** 個新的音樂連結。")
+        if not edit_content: # 如果沒出錯
+            edit_content = f"✅ 歷史紀錄匯入完成！已檢查 **{checked_count} / {limit}** 筆訊息，並成功匯入 **{imported_count}** 個新的音樂連結。"
+        
+        # 回覆
+        if is_private:
+            await ctx.followup.send(edit_content, ephemeral=True)
+        else:
+            await msg.edit(content=edit_content)
 
     
-    # =========================================================
-    # ✅ --- 5. 新增功能：搜尋音樂 ---
-    # =========================================================
-    @commands.command(name='searchmusic', aliases=['搜尋音樂', 'searchlist'])
-    async def search_music_list(self, ctx, *, keyword: str):
+    # --- ✅ 指令：搜尋音樂 (轉換為 Hybrid) ---
+    @commands.hybrid_command(name='searchmusic', aliases=['搜尋音樂', 'searchlist'], description="搜尋音樂清單中標題包含關鍵字的歌曲")
+    @app_commands.describe(keyword="要搜尋的標題關鍵字")
+    async def search_music_list(self, ctx: commands.Context, *, keyword: str):
         """
         搜尋音樂清單中標題包含關鍵字的歌曲。
         指令格式: #searchmusic <關鍵字>
         """
+        is_private = ctx.interaction is not None
         music_list = self._load_music_list()
         if not music_list:
-            return await ctx.send("目前音樂清單中沒有任何紀錄。", delete_after=10)
+            return await ctx.send("目前音樂清單中沒有任何紀錄。", ephemeral=is_private)
 
-        # 執行搜尋 (不分大小寫)
         search_results = [
             entry for entry in music_list 
             if keyword.lower() in entry.get('title', '').lower()
@@ -426,37 +411,35 @@ class Music(Cog_Extension):
             embed = discord.Embed(
                 title=custom_title,
                 description=f"在 **{len(music_list)}** 筆紀錄中，找不到標題包含 `{keyword}` 的歌曲。",
-                color=0xFF0000 # 紅色
+                color=0xFF0000 
             )
-            return await ctx.send(embed=embed)
+            return await ctx.send(embed=embed, ephemeral=is_private)
         
-        # --- 如果有結果，使用分頁顯示 ---
         total_items = len(search_results)
         total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
-        page = 1 # 搜尋結果永遠從第 1 頁開始
+        page = 1 
         start_index = 0
 
         embed = _create_music_list_embed(
             search_results, page, total_pages, total_items, start_index,
-            title=custom_title # 傳入自訂標題
+            title=custom_title
         )
         
-        # 讓 View 知道要用 search_results 來翻頁
         view = MusicListView(search_results, ctx, total_pages, page, embed_title=custom_title) 
         
-        await ctx.send(embed=embed, view=view)
+        await ctx.send(embed=embed, view=view, ephemeral=is_private)
 
 
-    # =========================================================
-    # ✅ --- 6. 新增功能：刪除歌曲 (僅限管理員) ---
-    # =========================================================
-    @commands.command(name='removesong', aliases=['刪除音樂', 'remusic'])
-    @commands.has_permissions(administrator=True) # 限制僅限管理員
-    async def remove_song(self, ctx, number: int):
+    # --- ✅ 指令：刪除歌曲 (轉換為 Hybrid) ---
+    @commands.hybrid_command(name='removesong', aliases=['刪除音樂', 'remusic'], description="[僅限管理員] 從音樂清單中刪除指定編號的歌曲")
+    @app_commands.describe(number="要刪除的歌曲編號 (見 #musiclist)")
+    @commands.has_permissions(administrator=True) 
+    async def remove_song(self, ctx: commands.Context, number: int):
         """
         從音樂清單中刪除指定編號的歌曲 (僅限管理員)。
         指令格式: #removesong <編號>
         """
+        is_private = ctx.interaction is not None
         music_list = self._load_music_list()
         
         # 將 1-based 編號轉為 0-based 索引
@@ -471,41 +454,41 @@ class Music(Cog_Extension):
             await ctx.send(
                 f"✅ **已刪除歌曲：**\n"
                 f"編號 **{number}**: `{removed_song.get('title', 'N/A')}`\n"
-                f"*(分享者: {removed_song.get('posted_by')})*"
+                f"*(分享者: {removed_song.get('posted_by')})*",
+                ephemeral=is_private
             )
         else:
             await ctx.send(
                 f"❌ **刪除失敗：** 編號 `{number}` 無效。\n"
-                f"請使用 `#musiclist` 查詢編號，目前清單總共有 **{len(music_list)}** 首歌。"
+                f"請使用 `#musiclist` 查詢編號，目前清單總共有 **{len(music_list)}** 首歌。",
+                ephemeral=True # 錯誤一律私人
             )
 
-    # =========================================================
-    # ✅ --- 7. 新增功能：隨機歌曲 ---
-    # =========================================================
-    @commands.command(name='randomsong', aliases=['隨機音樂', 'randommusic'])
-    async def random_song(self, ctx):
+    # --- ✅ 指令：隨機歌曲 (轉換為 Hybrid) ---
+    @commands.hybrid_command(name='randomsong', aliases=['隨機音樂', 'randommusic'], description="從音樂清單中隨機挑選一首歌")
+    async def random_song(self, ctx: commands.Context):
         """
         從音樂清單中隨機挑選一首歌。
         指令格式: #randomsong
         """
+        is_private = ctx.interaction is not None
         music_list = self._load_music_list()
         if not music_list:
-            return await ctx.send("目前音樂清單中沒有任何紀錄。", delete_after=10)
+            return await ctx.send("目前音樂清單中沒有任何紀錄。", ephemeral=is_private)
 
-        # 隨機挑選
         song = random.choice(music_list)
         
         embed = discord.Embed(
             title=f"🎶 隨機點播",
             description=f"**{song.get('title', '標題不詳')}**",
-            color=0x1DB954 # Spotify 綠色
+            color=0x1DB954 
         )
         embed.add_field(name="分享者", value=song.get('posted_by', '匿名'), inline=True)
-        embed.add_field(name="時間", value=song.get('timestamp', '時間不詳').split('T')[0], inline=True) # 只顯示日期
+        embed.add_field(name="時間", value=song.get('timestamp', '時間不詳').split('T')[0], inline=True)
         embed.add_field(name="連結", value=f"[點此開啟]({song['url']})", inline=False)
         embed.set_footer(text=f"由 {ctx.author.display_name} 點播")
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, ephemeral=is_private)
 
 
 async def setup(bot):

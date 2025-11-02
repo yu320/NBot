@@ -24,16 +24,19 @@ HEARTBEAT_INTERVAL_SECONDS = 240 # 例如，每 4 分鐘 (240 秒) 發送一次
 
 # --- PM2 擴展指令 (保持不變) ---
 @bot.command()
+@commands.is_owner() # 建議加上擁有者限制
 async def load(ctx, extension):
     await bot.load_extension(f'cmds.{extension}')
     await ctx.send(f'load {extension} done')
 
 @bot.command()
+@commands.is_owner() # 建議加上擁有者限制
 async def reload(ctx, extension):
     await bot.reload_extension(f'cmds.{extension}')
     await ctx.send(f'Re - load {extension} done')
 
 @bot.command()
+@commands.is_owner() # 建議加上擁有者限制
 async def unload(ctx, extension):
     await bot.unload_extension(f'cmds.{extension}')
     await ctx.send(f'Un - load {extension} done')
@@ -82,7 +85,10 @@ async def load_extensions(bot):
 @bot.event # 讓機器人上線並提示
 async def on_ready():
     """機器人準備就緒時執行的事件"""
-    logging.info(">> bot is online <<")
+    
+    # ✅ --- 依照您的要求修改 ---
+    # 使用 f-string 來自動獲取機器人名稱
+    logging.info(f">> bot is online  {bot.user.name} <<")
     
     # # 1. 發送 Discord 頻道上線通知 (確保 CHANNEL_ID 存在)
     if CHANNEL_ID:
@@ -97,6 +103,54 @@ async def on_ready():
         send_heartbeat.start()
         # ✅ 7. print 改 logging
         logging.info("Uptime Kuma heartbeat task started.")
+
+    # ✅ --- 3. 新增此區塊以同步 / 指令 ---
+    try:
+        # bot.tree.sync() 會讀取所有 hybrid_command 並註冊
+        synced = await bot.tree.sync()
+        logging.info(f"Synced {len(synced)} application (/) commands.")
+    except Exception as e:
+        logging.error(f"Failed to sync application commands: {e}")
+
+
+# ✅ --- 全域錯誤處理器 (捕捉 CommandNotFound 等) ---
+@bot.event
+async def on_command_error(ctx, error):
+    """
+    捕捉所有未被 Cog 處理的錯誤 (例如：指令未找到)。
+    """
+    
+    # 1. 處理「指令未找到」錯誤
+    if isinstance(error, commands.CommandNotFound):
+        # 記錄為警告 (Warning)，因為這通常是使用者輸入錯誤
+        logging.warning(
+            f"指令未找到 (CommandNotFound): {ctx.author} (ID: {ctx.author.id}) "
+            f"在頻道 #{ctx.channel.name} (Guild: {ctx.guild.name}) "
+            f"嘗試使用: '{ctx.message.content}'"
+        )
+        # (選擇不回覆使用者，避免干擾)
+    
+    # 2. 處理其他所有未被 Cog 捕捉的「真正」錯誤
+    else:
+        # 將其記錄為嚴重錯誤 (Error)，並提供詳細上下文
+        logging.error(
+            f"未處理的全域錯誤 (Unhandled Global Error)!\n"
+            f"指令: {ctx.command}\n"
+            f"觸發者: {ctx.author} (ID: {ctx.author.id})\n"
+            f"訊息: '{ctx.message.content}'\n"
+            f"錯誤類型: {type(error).__name__}\n"
+            f"錯誤訊息: {error}",
+            exc_info=True # 附加完整的錯誤追蹤 (Traceback)
+        )
+        # 嘗試以私人訊息回覆使用者發生錯誤
+        try:
+            # 檢查是否已經回覆過 (適用於 / 指令)
+            if ctx.interaction and ctx.interaction.response.is_done():
+                 await ctx.followup.send(f"❌ 發生了一個未知的內部錯誤，已通知管理員。", ephemeral=True)
+            else:
+                 await ctx.send(f"❌ 發生了一個未知的內部錯誤，已通知管理員。", ephemeral=True)
+        except Exception as e:
+            logging.error(f"Failed to send error message to user: {e}")
 
 
 if __name__ == "__main__":

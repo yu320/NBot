@@ -2,7 +2,8 @@
 # 您的 .env 檔案 包含了 Supabase 金鑰
 .env
 .env.*
-
+.env.local
+*.env
 # 忽略 Node.js 的依賴套件資料夾 (非常龐大)
 node_modules/
 
