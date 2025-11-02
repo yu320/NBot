@@ -4,8 +4,8 @@ from core.classes import Cog_Extension
 import os
 import requests
 import asyncio 
-import logging # <--- ✅ 1. 在此加入 logging 模組
-
+import logging 
+from discord import app_commands # ✅ 1. 引入 app_commands
 
 class Calendar(commands.Cog):
     
@@ -19,10 +19,14 @@ class Calendar(commands.Cog):
             logging.warning("警告：CALENDAR_API_URL 環境變數未設定，日曆新增功能將無法運作。")
 
     # =========================================================
-    # ✅ 指令錯誤處理函式 (提供清晰的語法教學)
+    # ✅ 指令錯誤處理函式 (修改為私人回覆)
     # =========================================================
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
+        
+        # (我們在上一輪加入的日誌記錄)
+        logging.warning(f"Calendar Cog 捕獲到指令錯誤 (Command: {ctx.command}, Error: {error})")
+
         # 確保只處理 addevent 相關的指令錯誤
         if ctx.command and ctx.command.name in ['addevent', 'addcal', '增加行程', '增加行事曆', '新增行程', '新增行事曆', '增加活動', '新增活動']:
             
@@ -31,9 +35,10 @@ class Calendar(commands.Cog):
                 await ctx.send(
                     f"⚠️ **參數遺漏錯誤：** 您忘記提供 `{error.param.name}` 參數了！\n\n"
                     f"**👉 正確格式：**\n"
-                    f"`#addevent \"YYYY-MM-DD [HH:MM]\" \"活動標題\" [持續時間(分)] [日曆代號]`\n"
-                    f"**範例 (有時間)：** `#addevent \"2025-12-25 10:00\" \"聖誕節派對\" 120 school`\n"
-                    f"**範例 (全天)：** `#addevent \"2025-12-24\" \"平安夜\"`"
+                    f"`{ctx.prefix}{ctx.command.name} \"YYYY-MM-DD [HH:MM]\" \"活動標題\" [持續時間(分)] [日曆代號]`\n"
+                    f"**範例 (有時間)：** `{ctx.prefix}{ctx.command.name} \"2025-12-25 10:00\" \"聖誕節派對\" 120 school`\n"
+                    f"**範例 (全天)：** `{ctx.prefix}{ctx.command.name} \"2025-12-24\" \"平安夜\"`",
+                    ephemeral=True # ✅ 設為私人
                 )
                 
             # 參數類型錯誤 (例如: duration 不是數字)
@@ -42,10 +47,11 @@ class Calendar(commands.Cog):
                 if 'duration' in str(error):
                     await ctx.send(
                         f"⚠️ **參數類型錯誤：** `持續時間` 必須是**數字**！\n"
-                        f"請檢查您輸入的參數，確保 **時間和標題** 都用**雙引號 `\"`** 括起來，且 `持續時間` 是數字。"
+                        f"請檢查您輸入的參數，確保 **時間和標題** 都用**雙引號 `\"`** 括起來，且 `持續時間` 是數字。",
+                        ephemeral=True # ✅ 設為私人
                     )
                 else:
-                    await ctx.send(f"⚠️ **指令參數錯誤：** {error}\n請檢查您輸入的參數格式是否正確。")
+                    await ctx.send(f"⚠️ **指令參數錯誤：** {error}\n請檢查您輸入的參數格式是否正確。", ephemeral=True)
 
             # 忽略其他錯誤，讓它繼續傳播
             else:
@@ -59,17 +65,27 @@ class Calendar(commands.Cog):
                  logging.error(f"Unhandled error in {ctx.command}: {error}")
 
 
-    @commands.command(name='addevent', aliases=['addcal','增加行程','增加行事曆','新增行程','新增行事曆',"增加活動","新增活動"])
-    # 權限檢查已註釋掉，讓一般用戶也能使用
-    # @commands.has_permissions(administrator=True) 
-    async def add_calendar_event(self, ctx, date_time: str, title: str, duration: int = 60, calendar_key: str = "default"):
+    # ✅ 2. 改為 @commands.hybrid_command()
+    @commands.hybrid_command(
+        name='addevent', 
+        aliases=['addcal','增加行程','增加行事曆','新增行程','新增行事曆',"增加活動","新增活動"],
+        description="新增一個 Google 日曆活動到 GAS Web App"
+    )
+    # ✅ 3. 為 / 指令的「參數」加上描述
+    @app_commands.describe(
+        date_time="日期與時間 (格式: \"YYYY-MM-DD [HH:MM]\")",
+        title="活動標題 (格式: \"我的標題\")",
+        duration="持續時間 (分鐘) (預設 60)",
+        calendar_key="日曆代號 (例如: default, school) (預設 default)"
+    )
+    async def add_calendar_event(self, ctx: commands.Context, date_time: str, title: str, duration: int = 60, calendar_key: str = "default"):
         """
         新增一個 Google 日曆活動到 GAS Web App。
         指令格式: #addevent <YYYY-MM-DD [HH:MM]> <標題> [持續時間(分)] [日曆代號]
         """
         
         if not self.gas_api_url:
-            return await ctx.send("❌ 機器人配置錯誤：未設定日曆 API 網址 (CALENDAR_API_URL)。")
+            return await ctx.send("❌ 機器人配置錯誤：未設定日曆 API 網址 (CALENDAR_API_URL)。", ephemeral=True)
 
         # 構造要發送給 GAS 的資料 (JSON 格式)
         payload = {
@@ -81,7 +97,10 @@ class Calendar(commands.Cog):
             "location": f"Discord 伺服器: {ctx.guild.name}"
         }
 
-        await ctx.send(f"正在向 Google Calendar 新增活動 `{title}`...")
+        # ✅ 4. 將所有回覆改為私人 (ephemeral=True)
+        # 對 / 指令，這會顯示一個「思考中」的私人訊息
+        # 對 # 指令，這會發送一個公開訊息
+        await ctx.send(f"正在向 Google Calendar 新增活動 `{title}`...", ephemeral=True)
 
         try:
             # 使用 asyncio.to_thread 在單獨執行緒中運行 requests.post
@@ -92,37 +111,41 @@ class Calendar(commands.Cog):
                 timeout=10
             )
             
+            # ✅ 5. 修改回覆 (使用 ctx.followup.send)
+            # 因為我們已經用 ctx.send 回覆過「正在新增...」
+            # 對 / 指令，我們必須用 followup.send 來「編輯」該回覆
+            # (ephemeral=True 在 followup 中是必需的，以保持私密性)
+            
             if r.status_code == 200:
                 gas_response = r.json()
                 
                 if gas_response.get("status") == "success":
                     message = gas_response.get("message")
-                    link = gas_response.get("link") # 這裡會收到 null (None)
+                    link = gas_response.get("link")
                     
-                    # ✅ 關鍵修正：檢查 link 是否存在 (Failsafe)
                     if link:
-                        await ctx.send(f"{message}\n[🔗 查看日曆活動]({link})")
+                        await ctx.followup.send(f"{message}\n[🔗 查看日曆活動]({link})", ephemeral=True)
                     else:
-                        await ctx.send(f"{message}") # 只發送成功訊息
+                        await ctx.followup.send(f"{message}", ephemeral=True) 
 
                 else:
-                    # 增強 GAS 處理失敗的錯誤訊息
                     gas_error_message = gas_response.get('message', '未知錯誤')
-                    await ctx.send(
+                    await ctx.followup.send(
                         f"❌ **日曆 API 處理失敗：** {gas_error_message}\n"
-                        f"請檢查您輸入的日期/時間格式，或目標日曆 ID 是否正確，並確認 GAS 已部署最新版本。"
+                        f"請檢查您輸入的日期/時間格式，或目標日曆 ID 是否正確，並確認 GAS 已部署最新版本。",
+                        ephemeral=True
                     )
             else:
-                # 增強網路請求失敗的錯誤訊息
-                await ctx.send(
+                await ctx.followup.send(
                     f"❌ **網路請求失敗：** HTTP 狀態碼 {r.status_code}\n"
-                    f"請檢查機器人的網路連線，或確認 GAS Web App 的 URL 是否正確且已部署。"
+                    f"請檢查機器人的網路連線，或確認 GAS Web App 的 URL 是否正確且已部署。",
+                    ephemeral=True
                 )
 
         except requests.exceptions.Timeout:
-            await ctx.send("❌ **連線超時：** 連線到 Google Apps Script 伺服器超時。")
+            await ctx.followup.send("❌ **連線超時：** 連線到 Google Apps Script 伺服器超時。", ephemeral=True)
         except Exception as e:
-            await ctx.send(f"❌ **程式碼錯誤：** 連線到 GAS 發生非預期錯誤: `{e}`")
+            await ctx.followup.send(f"❌ **程式碼錯誤：** 連線到 GAS 發生非預期錯誤: `{e}`", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(Calendar(bot))
