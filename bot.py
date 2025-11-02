@@ -12,8 +12,6 @@ load_dotenv()
 
 # --- 核心設定 (從環境變數讀取) ---
 intents = discord.Intents.all()
-# ✅ 1. 將 Bot 改為 commands.AutoShardedBot 
-# (對於混合指令，使用 AutoShardedBot 或 Bot 皆可，這裡保持 Bot)
 bot = commands.Bot(command_prefix='#' , intents = intents)
 
 # 從環境變數獲取配置
@@ -51,9 +49,12 @@ async def send_heartbeat():
     if UPTIME_KUMA_URL:
         try:
             # 1. 計算延遲 (ping)
+            # bot.latency 單位為秒，乘以 1000 得到毫秒 (ms)
+            # 這裡的 bot 變數是在檔案頂層定義的 commands.Bot 實例
             latency_ms = round(bot.latency * 1000)
             
             # 2. 構造帶有 ping 參數的 URL
+            # 💡 關鍵：直接將延遲數值附加到 UPTIME_KUMA_URL 的末尾。
             heartbeat_url_with_ping = f"{UPTIME_KUMA_URL}{latency_ms}"
             
             # 使用 requests 發送 GET 請求 (在單獨線程中運行以避免阻塞)
@@ -71,10 +72,13 @@ async def load_extensions(bot):
             if filename.endswith(".py"):
                 try:
                     await bot.load_extension(f'cmds.{filename[:-3]}')
+                    # ✅ 3. print 改 logging
                     logging.info(f'Loaded extension: {filename[:-3]}')
                 except Exception as e:
+                    # ✅ 4. print 改 logging
                     logging.error(f'Failed to load extension {filename[:-3]}: {e}')
     else:
+        # ✅ 5. print 改 logging
         logging.error("The 'cmds' directory does not exist.")
 
 
@@ -82,10 +86,11 @@ async def load_extensions(bot):
 async def on_ready():
     """機器人準備就緒時執行的事件"""
     
-    # (您要求的日誌修改)
+    # ✅ --- 依照您的要求修改 ---
+    # 使用 f-string 來自動獲取機器人名稱
     logging.info(f">> bot is online  {bot.user.name} <<")
     
-    # # 1. 發送 Discord 頻道上線通知
+    # # 1. 發送 Discord 頻道上線通知 (確保 CHANNEL_ID 存在)
     if CHANNEL_ID:
         channel = bot.get_channel(int(CHANNEL_ID))
         if channel:
@@ -96,6 +101,7 @@ async def on_ready():
     # 2. 啟動 Uptime Kuma 心跳任務
     if UPTIME_KUMA_URL and not send_heartbeat.is_running():
         send_heartbeat.start()
+        # ✅ 7. print 改 logging
         logging.info("Uptime Kuma heartbeat task started.")
 
     # ✅ --- 3. 新增此區塊以同步 / 指令 ---
@@ -107,7 +113,7 @@ async def on_ready():
         logging.error(f"Failed to sync application commands: {e}")
 
 
-# --- 全域錯誤處理器 (捕捉 CommandNotFound 等) ---
+# ✅ --- 全域錯誤處理器 (捕捉 CommandNotFound 等) ---
 @bot.event
 async def on_command_error(ctx, error):
     """
@@ -122,7 +128,7 @@ async def on_command_error(ctx, error):
             f"在頻道 #{ctx.channel.name} (Guild: {ctx.guild.name}) "
             f"嘗試使用: '{ctx.message.content}'"
         )
-        # (當使用 / 時，CommandNotFound 通常不會觸發，這是 # 指令專用的)
+        # (選擇不回覆使用者，避免干擾)
     
     # 2. 處理其他所有未被 Cog 捕捉的「真正」錯誤
     else:
@@ -138,15 +144,18 @@ async def on_command_error(ctx, error):
         )
         # 嘗試以私人訊息回覆使用者發生錯誤
         try:
-            await ctx.send(f"❌ 發生了一個未知的內部錯誤，已通知管理員。", ephemeral=True)
-        except discord.errors.InteractionResponded:
-             await ctx.followup.send(f"❌ 發生了一個未知的內部錯誤，已通知管理員。", ephemeral=True)
+            # 檢查是否已經回覆過 (適用於 / 指令)
+            if ctx.interaction and ctx.interaction.response.is_done():
+                 await ctx.followup.send(f"❌ 發生了一個未知的內部錯誤，已通知管理員。", ephemeral=True)
+            else:
+                 await ctx.send(f"❌ 發生了一個未知的內部錯誤，已通知管理員。", ephemeral=True)
         except Exception as e:
             logging.error(f"Failed to send error message to user: {e}")
 
 
 if __name__ == "__main__":
-    # 設定 logging 的基本配置
+    # ✅ 8. 設定 logging 的基本配置
+    # 這樣您的日誌才會顯示 INFO 等級
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
     # 確保 Token 存在再啟動
@@ -156,4 +165,5 @@ if __name__ == "__main__":
         # 啟動機器人
         bot.run(DISCORD_TOKEN)
     else:
+        # ✅ 9. print 改 logging
         logging.critical("Error: DISCORD_TOKEN not found in environment variables. Bot startup aborted.")

@@ -8,13 +8,9 @@ import os
 import json   
 import random 
 import logging 
+from discord import app_commands # ✅ 1. 引入 app_commands
 
 # --- yt-dlp 和 FFmpeg 設定 ---
-# (您的 Dockerfile 已安裝 ffmpeg)
-
-# 
-# ✅ --- 修正點：移除 postprocessors 並優化 format ---
-#
 YDL_OPTS = {
     # 優先選取壓縮過的格式 (m4a, aac, opus)，減少 RAM 負擔
     'format': 'bestaudio[ext=m4a]/bestaudio[ext=aac]/bestaudio[ext=opus]/bestaudio/best',
@@ -23,16 +19,10 @@ YDL_OPTS = {
     'default_search': 'ytsearch', 
     'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
     'restrictfilenames': True,
-    # 
-    # 'postprocessors': [ ... ], # <-- 已移除此區塊，這是導致 Code 137 的主因
-    #
     'extract_flat': True 
 }
-#
-# ✅ --- 修正結束 ---
-# 
 
-# FFmpeg 選項：在連接時自動重新連接，隱藏終端機輸出
+# FFmpeg 選項
 FFMPEG_OPTS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn',
@@ -49,7 +39,6 @@ class MusicPlay(Cog_Extension):
     def __init__(self, bot):
         super().__init__(bot)
         # 為每個伺服器(guild)建立獨立的佇列
-        # 結構: { guild_id: { 'queue': [], 'is_playing': False } }
         self.guild_states = {}
 
     def get_guild_state(self, ctx):
@@ -75,11 +64,9 @@ class MusicPlay(Cog_Extension):
     async def play_next_song(self, ctx):
         """
         播放佇列中的下一首歌。
-        (此函式會在播放前才獲取 stream_url)
         """
         state = self.get_guild_state(ctx)
         
-        # 如果正在播放，則返回
         if state['is_playing']:
             return
             
@@ -108,24 +95,20 @@ class MusicPlay(Cog_Extension):
         vc = ctx.voice_client
 
         if not vc:
-            # 以防萬一 bot 斷線了
             state['is_playing'] = False
             return
 
         # --- 即時獲取串流 ---
         loop = self.bot.loop or asyncio.get_event_loop()
         
-        # 使用一個不抽取播放清單的 YDL_OPTS 來獲取單一串流
         single_ydl_opts = YDL_OPTS.copy()
         single_ydl_opts['noplaylist'] = True
         
         with yt_dlp.YoutubeDL(single_ydl_opts) as ydl:
             try:
-                # 在獨立線程中運行
                 info = await loop.run_in_executor(None, lambda: ydl.extract_info(song['webpage_url'], download=False))
                 stream_url = info.get('url')
                 if not stream_url:
-                    # 如果上面失敗了，嘗試重新抽取 (有時 yt-dlp 需要兩次)
                     info = await loop.run_in_executor(None, lambda: ydl.extract_info(song['webpage_url'], download=True))
                     stream_url = info.get('url')
 
@@ -142,26 +125,28 @@ class MusicPlay(Cog_Extension):
         # 開始播放
         vc.play(
             discord.FFmpegPCMAudio(stream_url, **FFMPEG_OPTS),
-            # 播放完畢時，調用 self.song_finished
             after=lambda e: self.bot.loop.create_task(self.song_finished(ctx, e))
         )
         
+        # ✅ 播放通知：一律公開
         await ctx.send(f"🎶 正在播放: **{song['title']}** (請求者: {song['requester'].display_name})")
 
     # =========================================================
-    # 指令：播放音樂
+    # ✅ 指令：播放音樂 (轉換為 Hybrid)
     # =========================================================
-    @commands.command(name="play", aliases=['p'])
-    async def play(self, ctx, *, search: str):
+    @commands.hybrid_command(name="play", aliases=['p'], description="播放音樂 (URL 或 搜尋關鍵字)")
+    @app_commands.describe(search="YouTube 關鍵字或 URL")
+    async def play(self, ctx: commands.Context, *, search: str):
         """
         播放音樂。
         指令格式: #play <URL 或 搜尋關鍵字>
         """
+        is_private = ctx.interaction is not None
         state = self.get_guild_state(ctx)
 
         # 1. 檢查使用者是否在語音頻道
         if not ctx.author.voice:
-            return await ctx.send("您必須先加入一個語音頻道！")
+            return await ctx.send("您必須先加入一個語音頻道！", ephemeral=True) # 錯誤一律私人
 
         # 2. 獲取/加入語音頻道
         channel = ctx.author.voice.channel
@@ -173,31 +158,36 @@ class MusicPlay(Cog_Extension):
             try:
                 vc = await channel.connect()
             except discord.errors.Forbidden:
-                return await ctx.send(f"❌ 權限不足：我無法加入頻道 `{channel.name}`。")
+                return await ctx.send(f"❌ 權限不足：我無法加入頻道 `{channel.name}`。", ephemeral=True)
 
-        # 3. 搜尋 yt-dlp (在獨立線程中執行以避免阻塞)
-        await ctx.send(f"🔎 正在搜尋: `{search}`...")
+        # 3. 搜尋 yt-dlp
+        # / 指令會用 "思考中"，# 指令會發送公開訊息
+        msg = await ctx.send(f"🔎 正在搜尋: `{search}`...", ephemeral=is_private)
         
         loop = self.bot.loop or asyncio.get_event_loop()
         
-        # 使用允許播放清單的 YDL_OPTS 來檢查
         playlist_ydl_opts = YDL_OPTS.copy()
         playlist_ydl_opts['noplaylist'] = False
         
-        with yt_dlp.YoutubeDL(playlist_ydl_opts) as ydl:
-            try:
+        info = None
+        error_msg = None
+        try:
+            with yt_dlp.YoutubeDL(playlist_ydl_opts) as ydl:
                 info = await loop.run_in_executor(None, lambda: ydl.extract_info(search, download=False))
-            except Exception as e:
-                logging.error(f"yt-dlp 搜尋失敗 (Guild: {ctx.guild.id}, Search: {search}): {e}")
-                return await ctx.send(f"❌ 搜尋失敗或找不到影片: {e}")
-
-        # 4. 準備歌曲資訊 (區分播放清單和單曲)
+        except Exception as e:
+            logging.error(f"yt-dlp 搜尋失敗 (Guild: {ctx.guild.id}, Search: {search}): {e}")
+            error_msg = f"❌ 搜尋失敗或找不到影片: {e}"
         
+        if error_msg:
+            if is_private: return await ctx.followup.send(error_msg, ephemeral=True)
+            else: return await msg.edit(content=error_msg)
+
+        # 4. 準備歌曲資訊
         songs_to_add = []
+        playlist_title = None
         
         if 'entries' in info:
-            # 這是一個播放清單
-            await ctx.send(f"🔄 正在處理播放清單: **{info.get('title', 'N/A')}**...")
+            playlist_title = info.get('title', 'N/A')
             for entry in info['entries']:
                 if entry:
                     songs_to_add.append({
@@ -205,8 +195,7 @@ class MusicPlay(Cog_Extension):
                         'webpage_url': entry.get('url'), # 'extract_flat' 會將 url 設為 webpage_url
                         'requester': ctx.author
                     })
-        else:
-            # 這是一個單曲
+        elif info: # 確保 info 不是 None
             songs_to_add.append({
                 'title': info.get('title', 'N/A'),
                 'webpage_url': info.get('webpage_url', info.get('url')), # 獲取頁面 URL
@@ -214,7 +203,9 @@ class MusicPlay(Cog_Extension):
             })
 
         if not songs_to_add:
-             return await ctx.send("❌ 抱歉，無法從您的搜尋中獲取任何歌曲。")
+             error_msg = "❌ 抱歉，無法從您的搜尋中獲取任何歌曲。"
+             if is_private: return await ctx.followup.send(error_msg, ephemeral=True)
+             else: return await msg.edit(content=error_msg)
 
         # 5. 加入佇列
         for song in songs_to_add:
@@ -222,151 +213,153 @@ class MusicPlay(Cog_Extension):
                  state['song_queue'].append(song)
              
         if len(songs_to_add) == 1:
-            await ctx.send(f"✅ 已加入佇列: **{songs_to_add[0]['title']}**")
+            reply_content = f"✅ 已加入佇列: **{songs_to_add[0]['title']}**"
         else:
-             await ctx.send(f"✅ 已將 **{len(songs_to_add)}** 首歌從播放清單加入佇列！")
+             reply_content = f"✅ 已將 **{len(songs_to_add)}** 首歌從播放清單 **{playlist_title}** 加入佇列！"
+
+        if is_private: await ctx.followup.send(reply_content, ephemeral=True)
+        else: await msg.edit(content=reply_content)
 
         # 6. 如果目前沒在播放，就開始播放
         if not state['is_playing']:
             await self.play_next_song(ctx)
 
     # =========================================================
-    # 指令：播放 data/music_list.json
+    # ✅ 指令：播放 data/music_list.json (轉換為 Hybrid)
     # =========================================================
-    @commands.command(name="playlist", aliases=['播放清單音樂', 'pl'])
-    async def playlist(self, ctx):
+    @commands.hybrid_command(name="playlist", aliases=['播放清單音樂', 'pl'], description="播放 data/music_list.json 中的所有音樂 (隨機排序)")
+    async def playlist(self, ctx: commands.Context):
         """
         播放 data/music_list.json 中的所有音樂 (隨機排序)。
         指令格式: #playlist
         """
+        is_private = ctx.interaction is not None
         state = self.get_guild_state(ctx)
 
-        # 1. 檢查使用者是否在語音頻道
+        # 1. 檢查
         if not ctx.author.voice:
-            return await ctx.send("您必須先加入一個語音頻道！")
+            return await ctx.send("您必須先加入一個語音頻道！", ephemeral=True)
         
-        # 2. 獲取/加入語音頻道
+        # 2. 加入頻道
         channel = ctx.author.voice.channel
         if ctx.voice_client:
-            vc = ctx.voice_client
-            if vc.channel != channel:
-                await vc.move_to(channel)
+            if ctx.voice_client.channel != channel:
+                await ctx.voice_client.move_to(channel)
         else:
             try:
                 vc = await channel.connect()
             except discord.errors.Forbidden:
-                return await ctx.send(f"❌ 權限不足：我無法加入頻道 `{channel.name}`。")
+                return await ctx.send(f"❌ 權限不足：我無法加入頻道 `{channel.name}`。", ephemeral=True)
 
         # 3. 載入 music_list.json
         if not os.path.exists(MUSIC_FILE):
-            return await ctx.send(f"❌ 錯誤：找不到您的音樂清單檔案 (`{MUSIC_FILE}`)。")
+            return await ctx.send(f"❌ 錯誤：找不到您的音樂清單檔案 (`{MUSIC_FILE}`)。", ephemeral=is_private)
         
         try:
             with open(MUSIC_FILE, 'r', encoding='utf8') as f:
                 music_list = json.load(f)
         except Exception as e:
-            return await ctx.send(f"❌ 讀取音樂清單失敗: {e}")
+            return await ctx.send(f"❌ 讀取音樂清單失敗: {e}", ephemeral=is_private)
 
         if not music_list:
-            return await ctx.send("❌ 您的音樂清單是空的！")
+            return await ctx.send("❌ 您的音樂清單是空的！", ephemeral=is_private)
 
         # 4. 隨機排序並加入佇列
         random.shuffle(music_list)
         
         added_count = 0
         for entry in music_list:
-            # 建立與 #play 指令相容的歌曲物件
             song = {
                 'title': entry.get('title', 'N/A'),
-                'webpage_url': entry.get('url'), # 根據 musiclist.py, 'url' 欄位是頁面網址
-                'requester': ctx.author # 標記是誰啟動了這個播放清單
+                'webpage_url': entry.get('url'),
+                'requester': ctx.author 
             }
-            
             if song['webpage_url']:
                 state['song_queue'].append(song)
                 added_count += 1
         
         if added_count == 0:
-            return await ctx.send("❌ 您的清單中沒有有效的歌曲連結。")
+            return await ctx.send("❌ 您的清單中沒有有效的歌曲連結。", ephemeral=is_private)
 
-        await ctx.send(f"✅ 已將 **{added_count}** 首歌 (來自 `music_list.json`) 加入隨機播放佇列！")
+        await ctx.send(f"✅ 已將 **{added_count}** 首歌 (來自 `music_list.json`) 加入隨機播放佇列！", ephemeral=is_private)
 
-        # 5. 如果目前沒在播放，就開始播放
+        # 5. 開始播放
         if not state['is_playing']:
             await self.play_next_song(ctx)
 
     # =========================================================
-    # 指令：離開頻道 (停止)
+    # ✅ 指令：離開頻道 (轉換為 Hybrid)
     # =========================================================
-    @commands.command(name="stop", aliases=['leave', 'dc'])
-    async def stop(self, ctx):
+    @commands.hybrid_command(name="stop", aliases=['leave', 'dc'], description="停止播放並離開語音頻道")
+    async def stop(self, ctx: commands.Context):
         """
         停止播放並離開語音頻道。
         指令格式: #stop
         """
+        is_private = ctx.interaction is not None
+        
         if not ctx.voice_client:
-            return await ctx.send("Bot 目前不在任何語音頻道中。")
+            return await ctx.send("Bot 目前不在任何語音頻道中。", ephemeral=is_private)
 
         state = self.get_guild_state(ctx)
         
-        # 清空佇列、停止播放、斷線
         state['song_queue'] = []
         state['is_playing'] = False
         if ctx.voice_client.is_playing():
             ctx.voice_client.stop()
             
         await ctx.voice_client.disconnect()
-        await ctx.send("👋 已停止播放並離開頻道。")
-        # 清除此伺服器的狀態
+        await ctx.send("👋 已停止播放並離開頻道。", ephemeral=is_private)
+        
         if ctx.guild.id in self.guild_states:
             del self.guild_states[ctx.guild.id]
 
     # =========================================================
-    # 指令：跳過歌曲
+    # ✅ 指令：跳過歌曲 (轉換為 Hybrid)
     # =========================================================
-    @commands.command(name="skip", aliases=['s'])
-    async def skip(self, ctx):
+    @commands.hybrid_command(name="skip", aliases=['s'], description="跳過目前正在播放的歌曲")
+    async def skip(self, ctx: commands.Context):
         """
         跳過目前正在播放的歌曲。
         指令格式: #skip
         """
+        is_private = ctx.interaction is not None
+        
         if not ctx.voice_client:
-            return await ctx.send("Bot 目前不在任何語音頻道中。")
+            return await ctx.send("Bot 目前不在任何語音頻道中。", ephemeral=is_private)
         
         state = self.get_guild_state(ctx)
 
         if not state['is_playing']:
-            # 如果佇列中有歌但未播放，也幫忙啟動
             if state['song_queue']:
-                 await ctx.send("...佇列卡住，正在啟動下一首。")
+                 await ctx.send("...佇列卡住，正在啟動下一首。", ephemeral=is_private)
                  await self.play_next_song(ctx)
             else:
-                await ctx.send("目前沒有歌曲正在播放。")
+                await ctx.send("目前沒有歌曲正在播放。", ephemeral=is_private)
             return
 
-        # 停止目前歌曲 (stop() 會自動觸發 after 回調 -> song_finished -> play_next_song)
         ctx.voice_client.stop()
-        await ctx.send("⏭️ 已跳過目前歌曲。")
+        await ctx.send("⏭️ 已跳過目前歌曲。", ephemeral=is_private)
 
 
     # =========================================================
-    # 指令：查看佇列
+    # ✅ 指令：查看佇列 (轉換為 Hybrid)
     # =========================================================
-    @commands.command(name="queue", aliases=['q'])
-    async def queue(self, ctx):
+    @commands.hybrid_command(name="queue", aliases=['q'], description="顯示目前的播放佇列")
+    async def queue(self, ctx: commands.Context):
         """
         顯示目前的播放佇列。
         指令格式: #queue
         """
+        is_private = ctx.interaction is not None
         state = self.get_guild_state(ctx)
         queue = state['song_queue']
 
         if not queue:
-            return await ctx.send("目前播放佇列是空的。")
+            return await ctx.send("目前播放佇列是空的。", ephemeral=is_private)
 
         embed = discord.Embed(title="🎶 播放佇列", color=0x1DB954)
         
-        # 只顯示佇列中的前 10 首歌
         for i, song in enumerate(queue[:10]):
             embed.add_field(
                 name=f"**{i+1}. {song['title']}**", 
@@ -377,15 +370,22 @@ class MusicPlay(Cog_Extension):
         if len(queue) > 10:
             embed.set_footer(text=f"...還有 {len(queue) - 10} 首歌在佇列中")
 
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, ephemeral=is_private)
 
     # =========================================================
-    # 指令錯誤處理函式 (提供教學)
+    # ✅ 指令錯誤處理函式 (已修正)
     # =========================================================
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
         
-        # 1. 定義此 Cog 中的所有指令名稱
+        # ✅ 關鍵修正：如果指令不屬於 'MusicPlay' Cog，就直接退出
+        if ctx.command and ctx.command.cog_name != 'MusicPlay':
+            return
+            
+        logging.warning(f"MusicPlay Cog 捕獲到指令錯誤 (Command: {ctx.command}, Error: {error})")
+
+        is_private = ctx.interaction is not None
+        
         MUSIC_PLAY_COMMANDS = [
             'play', 'p',
             'playlist', '播放清單音樂', 'pl',
@@ -394,45 +394,30 @@ class MusicPlay(Cog_Extension):
             'queue', 'q'
         ]
 
-        # 2. 確保只處理 music_play 相關的指令錯誤
         if ctx.command and ctx.command.name in MUSIC_PLAY_COMMANDS:
             
-            # 3. 處理「遺漏參數」錯誤 (最常見的)
             if isinstance(error, commands.MissingRequiredArgument):
-                # 唯一需要參數的是 'play'
                 if ctx.command.name in ['play', 'p']:
                     await ctx.send(
                         f"⚠️ **您忘記提供歌曲名稱或連結了！**\n\n"
                         f"**👉 正確格式：**\n"
-                        f"`{ctx.prefix}{ctx.command.name} [YouTube 關鍵字或 URL]`\n"
-                        f"**範例：** `{ctx.prefix}{ctx.command.name} Never Gonna Give You Up`"
+                        f"`{ctx.prefix}{ctx.command.name} [YouTube 關鍵字或 URL]`",
+                        ephemeral=is_private
                     )
                 else:
-                    # 備用 (雖然此 Cog 其他指令目前不需要參數)
-                    await ctx.send(f"⚠️ **參數遺漏錯誤：** 您忘記提供 `{error.param.name}` 參數了！")
+                    await ctx.send(f"⚠️ **參數遺漏錯誤：** 您忘記提供 `{error.param.name}` 參數了！", ephemeral=is_private)
 
-            # 4. 處理「權限不足」錯誤 (例如 @commands.has_permissions)
             elif isinstance(error, commands.MissingPermissions):
-                await ctx.send("❌ **權限不足：** 您沒有權限執行此指令。", delete_after=10)
+                await ctx.send("❌ **權限不足：** 您沒有權限執行此指令。", ephemeral=is_private, delete_after=10)
 
-            # 5. 處理指令內部的 Check 失敗 (例如 @commands.check)
             elif isinstance(error, commands.CheckFailure):
-                 await ctx.send(f"❌ **指令檢查失敗：** {error}", delete_after=10)
+                 await ctx.send(f"❌ **指令檢查失敗：** {error}", ephemeral=is_private, delete_after=10)
 
-            # 6. 忽略其他錯誤，讓它繼續傳播
             else:
-                # 可以在這裡印出未處理的錯誤，方便偵錯
-                logging.warning(f"MusicPlay Cog 中未處理的錯誤: {error}")
+                # 其他錯誤會自動上報給 bot.py
                 pass
         
-        else:
-            # 7. 讓其他指令的錯誤繼續由 bot.py 或其他 Cog 處理
-            # (這段邏輯是從您的 calendar.py 和 musiclist.py 複製過來的)
-            if self.bot.extra_events.get('on_command_error', None) is not None:
-                 await self.bot.on_command_error(ctx, error)
-            else:
-                 # 如果沒有其他監聽器，則引發錯誤
-                 logging.error(f"來自其他 Cog 的錯誤 (在 MusicPlay 中捕獲): {error}")
+        # ✅ 關鍵修正：移除了 'else' 區塊
 
 
 async def setup(bot):
