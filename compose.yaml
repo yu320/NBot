@@ -31,14 +31,15 @@ services:
       
       # 1. (必要) 監測通知要發送到的頻道 ID
       - MONITOR_CHANNEL_ID=${MONITOR_CHANNEL_ID}
-      
-      # 2. (可選) 身份組分隔線 ID (例如 "嗶啵⚡嗶啵" 的 ID)
       - MONITOR_ROLE_CATEGORY_ID=${MONITOR_CATEGORY_ID}
+      
+      # --- ✅ 新增：IP 流量監測功能 ---
+      # (請在 Dockge 中建立一個名為 IP_MONITOR_CHAN_ID 的變數)
+      - IP_MONITOR_CHANNEL_ID=${IP_MONITOR_CHAN_ID}
       
     volumes:
       # ✅ 修正後的 Volume 路徑 (只映射 data 資料夾)
       # 確保您的課程監測清單 (monitor_list.json) 和音樂清單 (music_list.json)
       # 會被儲存在您主機上的 ./data 資料夾中，而不是在容器內遺失。
       - ./data:/app/data
-      
 networks: {}
