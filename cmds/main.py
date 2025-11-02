@@ -28,7 +28,7 @@ class Main(Cog_Extension):
         try:
             talk_channel_id = int(TALK_CHANNEL_ID)
         except (TypeError, ValueError):
-            await ctx.send("錯誤：未正確設定 CHANNEL_ID。請檢查您的 .env 檔案。")
+            await ctx.send("目前的頻道ID有問題需要更正 汪!")
             return
             
         talk_channel = self.bot.get_channel(talk_channel_id)
@@ -38,7 +38,7 @@ class Main(Cog_Extension):
             deleted = await ctx.channel.purge(limit = num + 1)
             
             # 為了避免在刪除指令訊息時出現錯誤，我們直接發送成功訊息
-            await ctx.send(f"成功刪除 {len(deleted) - 1} 條訊息囉!")
+            await ctx.send(f"成功刪除 {len(deleted) - 1} 條訊息 汪!")
 
             # 在命令中使用 asyncio.sleep() 來暫停 8 秒
             await asyncio.sleep(8)
@@ -49,9 +49,9 @@ class Main(Cog_Extension):
         else :
             # 如果找不到頻道，則只顯示文字，否則使用 mention
             if talk_channel:
-                await ctx.send(f"指令要在{talk_channel.mention}才可以用啦!") 
+                await ctx.send(f"指令要在{talk_channel.mention}才可以用啦 汪!") 
             else:
-                await ctx.send(f"指令要在指定的頻道 (ID: {TALK_CHANNEL_ID}) 才可以用啦!")
+                await ctx.send(f"指令要在機器人頻道才可以用啦 汪!")
 
 
 async def setup(bot):
