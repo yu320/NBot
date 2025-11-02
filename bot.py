@@ -39,7 +39,7 @@ async def unload(ctx, extension):
     await ctx.send(f'Un - load {extension} done')
 
 
-# --- # --- Uptime Kuma 心跳任務 ---
+# --- Uptime Kuma 心跳任務 ---
 @tasks.loop(seconds=HEARTBEAT_INTERVAL_SECONDS)
 async def send_heartbeat():
     """定期向 Uptime Kuma 發送 HTTP 請求以保持監控器為 'Up' 狀態，並傳送延遲數值"""
@@ -51,14 +51,14 @@ async def send_heartbeat():
             latency_ms = round(bot.latency * 1000)
             
             # 2. 構造帶有 ping 參數的 URL
-            # Uptime Kuma Push API 支持在 URL 中添加 ?status=up&ping=<ms>
-            heartbeat_url_with_ping = f"{UPTIME_KUMA_URL}?status=up&msg=OK&ping={latency_ms}"
+            # 💡 關鍵：直接將延遲數值附加到 UPTIME_KUMA_URL 的末尾。
+            heartbeat_url_with_ping = f"{UPTIME_KUMA_URL}{latency_ms}"
             
             # 使用 requests 發送 GET 請求 (在單獨線程中運行以避免阻塞)
             await asyncio.to_thread(requests.get, heartbeat_url_with_ping, timeout=10) 
-            logging.info(f"Heartbeat sent successfully (Ping: {latency_ms}ms).") # 新增 logging
+            logging.info(f"Heartbeat sent successfully (Ping: {latency_ms}ms).") 
         except Exception as e:
-            logging.warning(f"Failed to send heartbeat to Uptime Kuma: {e}") # ✅ 2. print 改 logging
+            logging.warning(f"Failed to send heartbeat to Uptime Kuma: {e}")
 
 # --- 啟動擴展模組 (保持不變) ---
 async def load_extensions(bot):
