@@ -28,3 +28,4 @@ setting.json
 __pycache__/
 *.pyc
 GAS
+data/

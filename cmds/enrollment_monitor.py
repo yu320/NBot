@@ -14,7 +14,6 @@ from discord import app_commands # 引入 app_commands
 
 # --- 設定常量 ---
 MONITOR_FILE = './data/monitor_list.json' 
-# ✅ --- 新增：設定檔路徑 ---
 CONFIG_FILE = './data/monitor_config.json' 
 
 CHECK_INTERVAL_SECONDS = 180  # 每 3 分鐘檢查一次           
@@ -27,7 +26,7 @@ MONITOR_ROLE_CATEGORY_ID_STR = os.getenv('MONITOR_ROLE_CATEGORY_ID')
 # 禁用 requests 呼叫 verify=False 時產生的警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning) 
 
-# --- 爬蟲核心函式 ---
+# --- 爬蟲核心函式 (保持不變) ---
 def _fetch_state_keys() -> Optional[Dict[str, str]]:
     GET_URL = "https://webapp.yuntech.edu.tw/WebNewCAS/Course/QueryCour.aspx"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
@@ -41,7 +40,7 @@ def _fetch_state_keys() -> Optional[Dict[str, str]]:
                 keys[input_tag['name']] = input_tag['value']
         
         if '__VIEWSTATE' in keys and '__EVENTVALIDATION' in keys:
-            toolkit_key = keys.get('ctl00$MainContent$ToolkitScriptManager1$HiddenField', ';;AjaxControlToolkit, Version=4.1.60919.0, Culture=neutral, PublicKeyToken=28f01b0e84b6d53e:zh-TW:ab75ae50-1505-49da-acca-8b96b908cb1a:475a4ef5:effe2a26:7e63a579:5546a2b:d2e10b12:37e2e5c9:1d3ed089:751cdd15:dfad98a5:497ef277:a43b07eb:3cf12cf1')
+            toolkit_key = keys.get('ctl00$MainContent$ToolkitScriptManager1$HiddenField', ';;AjaxControlToolkit, Version=4.1.60919.0, Culture=neutral, PublicKeyToken=28f01b0e84b6d53e:zh-TW:ab75ae50-1505-49da-acca-8b96b9B2ce21188d702e6fb408cb1a:475a4ef5:effe2a26:7e63a579:5546a2b:d2e10b12:37e2e5c9:1d3ed089:751cdd15:dfad98a5:497ef277:a43b07eb:3cf12cf1')
             return {
                 'ToolkitScriptManager': toolkit_key,
                 'VIEWSTATE': keys['__VIEWSTATE'],
@@ -143,10 +142,8 @@ class EnrollmentMonitor(Cog_Extension):
         if not os.path.exists(MONITOR_FILE):
             self._save_monitor_list([])
             
-        # ✅ --- 新增：讀取設定檔 ---
-        self.default_acad_seme = DEFAULT_ACAD_SEME # 預設值
-        self._load_config() # 嘗試從 JSON 檔案讀取
-        # ---
+        self.default_acad_seme = DEFAULT_ACAD_SEME
+        self._load_config() 
             
         if self.notification_channel_id:
             self.check_enrollment.start()
@@ -172,7 +169,6 @@ class EnrollmentMonitor(Cog_Extension):
         except Exception as e:
             logging.error(f"儲存監測清單失敗: {e}")
 
-    # ✅ --- 新增：讀取和儲存設定檔的輔助函式 ---
     def _load_config(self):
         """啟動時讀取設定檔"""
         try:
@@ -197,10 +193,9 @@ class EnrollmentMonitor(Cog_Extension):
                 json.dump(config_data, f, indent=4, ensure_ascii=False)
         except Exception as e:
             logging.error(f"儲存 {CONFIG_FILE} 失敗: {e}")
-    # ---
 
     # =========================================================
-    # ✅ 表情符號反應監聽器 (Reaction Listeners)
+    # ✅ 修正 2：表情符號反應監聽器 (Reaction Listeners)
     # =========================================================
     
     async def _get_job_by_reaction_message(self, message_id: int) -> Optional[Dict[str, Any]]:
@@ -235,8 +230,19 @@ class EnrollmentMonitor(Cog_Extension):
             logging.warning(f"表情符號訊息 {payload.message_id}：找不到對應的身份組 ID {role_id}。")
             return
             
-        member = payload.member 
-        if not member: return
+        # --- ✅ 修正 2：使用 fetch_member 確保抓取到使用者 ---
+        try:
+            member = await guild.fetch_member(payload.user_id)
+        except discord.NotFound:
+            logging.warning(f"使用者 {payload.user_id} 新增了 🔔，但在伺服器中找不到該成員。")
+            return
+        except Exception as e:
+            logging.error(f"抓取成員 {payload.user_id} 時失敗: {e}")
+            return
+        
+        if not member: 
+            return # 再次檢查
+        # --- 修正 2 結束 ---
 
         try:
             if role not in member.roles:
@@ -249,7 +255,7 @@ class EnrollmentMonitor(Cog_Extension):
 
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
-        """當使用者移除表情符號時"""
+        """當使用者移除表情符號時 (此函式本來就是正確的)"""
         
         if payload.user_id == self.bot.user.id:
             return
@@ -285,7 +291,7 @@ class EnrollmentMonitor(Cog_Extension):
             logging.error(f"移除身份組時失敗: {e}")
 
     # =========================================================
-    # ✅ 背景任務：定期檢查
+    # 背景任務：定期檢查 (保持不變)
     # =========================================================
     @tasks.loop(seconds=CHECK_INTERVAL_SECONDS)
     async def check_enrollment(self):
@@ -345,7 +351,7 @@ class EnrollmentMonitor(Cog_Extension):
             self._save_monitor_list(monitor_list)
 
     # =========================================================
-    # ✅ 錯誤監聽器 (已修正重複報錯)
+    # 錯誤監聽器 (保持不變)
     # =========================================================
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -359,23 +365,19 @@ class EnrollmentMonitor(Cog_Extension):
         
         if ctx.command and ctx.command.name in ['monitor', 'add', 'update', 'remove', 'list', 'setdefault']:
             
-            # 權限不足
             if isinstance(error, commands.MissingPermissions):
                 await ctx.send("❌ **權限不足：** 您沒有權限執行此指令。", ephemeral=True, delete_after=10)
             
-            # 參數類型錯誤
             elif isinstance(error, commands.BadArgument):
                  await ctx.send(f"⚠️ **參數類型錯誤：** {error}", ephemeral=True)
             
-            # 遺漏參數
             elif isinstance(error, commands.MissingRequiredArgument):
-                 await ctx.send(f"⚠️ **參數遺漏錯誤：** 您忘記提供 `{error.param.name}` 參數了！", ephemeral=True)
+                 await ctx.send(f"⚠️ **參數遺 問題：** 您忘記提供 `{error.param.name}` 參數了！", ephemeral=True)
             else:
-                # 其他錯誤上報給 bot.py
                 pass
 
     # =========================================================
-    # ✅ 指令：設定監測任務 (轉換為 Hybrid Group)
+    # 指令：設定監測任務 (保持不變)
     # =========================================================
     @commands.hybrid_group(name='monitor', aliases=['監測', '課表監測'], description="管理課程人數監測任務")
     async def monitor(self, ctx: commands.Context):
@@ -387,18 +389,12 @@ class EnrollmentMonitor(Cog_Extension):
             embed.add_field(name=f"2. 更新學期", value=f"`{ctx.prefix}monitor update <課號> <新學期碼>` 或 `/monitor update ...`", inline=False)
             embed.add_field(name=f"3. 查看清單", value=f"`{ctx.prefix}monitor list` 或 `/monitor list`", inline=False)
             embed.add_field(name=f"4. 移除任務", value=f"`{ctx.prefix}monitor remove <課號>` 或 `/monitor remove ...`", inline=False)
-            # ✅ 移除 (管理員) 字樣
             embed.add_field(name=f"5. 設定預設學期", value=f"`{ctx.prefix}monitor setdefault <學期碼>` 或 `/monitor setdefault ...`", inline=False)
             await ctx.send(embed=embed, ephemeral=is_private)
 
-    # ✅ --- 修改：設定預設學期的指令 ---
-    # ✅ 移除 [僅限管理員] 字樣
     @monitor.command(name='setdefault', aliases=['設定預設學期'], description="設定 `/monitor add` 使用的預設學期")
     @app_commands.describe(semester_code="新的預設學期碼 (例如: 1151)")
-    # ✅ 移除 @commands.has_permissions(manage_roles=True)
     async def set_default_semester(self, ctx: commands.Context, semester_code: str):
-        """設定 `/monitor add` 使用的預設學期"""
-        
         is_private = ctx.interaction is not None
 
         if len(semester_code) != 4 or not semester_code.isdigit():
@@ -407,7 +403,7 @@ class EnrollmentMonitor(Cog_Extension):
         try:
             old_seme = self.default_acad_seme
             self.default_acad_seme = semester_code
-            self._save_config() # 寫入 JSON 檔案
+            self._save_config() 
             
             await ctx.send(f"✅ 成功更新預設學期！\n"
                          f"舊預設值: `{old_seme}`\n"
@@ -417,11 +413,12 @@ class EnrollmentMonitor(Cog_Extension):
                          
         except Exception as e:
             await ctx.send(f"❌ 儲存設定失敗: {e}", ephemeral=True)
-    # ---
 
-    # ✅ --- 修改：add_monitor_job (使用 @monitor.command) ---
+    # =========================================================
+    # ✅ 修正 1：add_monitor_job (互動式指令)
+    # =========================================================
     @monitor.command(name='add', aliases=['新增'], description="[互動式] 新增一個課程人數監測任務")
-    @commands.has_permissions(manage_roles=True) # (add 仍保留管理員權限)
+    @commands.has_permissions(manage_roles=True) 
     async def add_monitor_job(self, ctx: commands.Context):
         """
         以互動方式新增一個課程人數監測任務 (使用預設學期)。
@@ -429,7 +426,19 @@ class EnrollmentMonitor(Cog_Extension):
         
         is_private = ctx.interaction is not None
         
+        # --- 輔助函式：根據 is_private 決定回覆方式 ---
+        async def send_reply(message_content: str, ephemeral: bool = True):
+            # 這是針對「互動式」指令的特殊回覆邏輯
+            # prompt (第一個訊息) 已經發送
+            # 之後的所有回覆都必須用 followup 或 send
+            if is_private:
+                await ctx.followup.send(message_content, ephemeral=ephemeral)
+            else:
+                await ctx.send(message_content, ephemeral=ephemeral)
+        # ---
+        
         if not ctx.guild.me.guild_permissions.manage_roles:
+            # 這裡使用 return await ctx.send 是因為這是「第一個」回覆
             return await ctx.send("❌ 錯誤：Bot 需要「管理身份組 (Manage Roles)」權限才能執行此操作。", ephemeral=True) 
         if not self.notification_channel_id:
             return await ctx.send("❌ 錯誤：管理員尚未設定通知頻道 (MONITOR_CHANNEL_ID)。", ephemeral=True)
@@ -441,7 +450,7 @@ class EnrollmentMonitor(Cog_Extension):
             return m.author == ctx.author and m.channel == ctx.channel
 
         try:
-            # --- 步驟 1：詢問課號 ---
+            # --- 步驟 1：詢問課號 (這是第一個回覆) ---
             prompt = await ctx.send(f"目前預設學期為 `{self.default_acad_seme}`。\n請輸入您要監測的**課號 (Serial No.)**： (30 秒內回應)", ephemeral=is_private)
             
             msg_course_id = await self.bot.wait_for('message', check=check, timeout=30.0)
@@ -454,15 +463,16 @@ class EnrollmentMonitor(Cog_Extension):
             except discord.Forbidden:
                 pass 
             
-            # --- 步驟 2：使用預設學期碼 ---
             acad_seme = self.default_acad_seme
 
-            # --- 步驟 3：驗證與儲存 ---
             monitor_list = self._load_monitor_list()
-            if any(job['course_id'] == course_id and job['acad_seme'] == acad_seme for job in monitor_list):
-                return await ctx.send(f"⚠️ 課號 `{course_id}` (學期 {acad_seme}) 已經在監測清單中，請勿重複新增。", ephemeral=True)
             
-            # --- 步驟 4：建立身份組並設定位置 ---
+            # --- 步驟 3：驗證 (✅ 修正 1a：使用 send_reply) ---
+            if any(job['course_id'] == course_id and job['acad_seme'] == acad_seme for job in monitor_list):
+                await send_reply(f"⚠️ 課號 `{course_id}` (學期 {acad_seme}) 已經在監測清單中，請勿重複新增。", ephemeral=True)
+                return
+            
+            # --- 步驟 4：建立身份組 ---
             role_name = f"Mon-{course_id}"
             existing_role = discord.utils.get(ctx.guild.roles, name=role_name)
             if existing_role:
@@ -484,11 +494,14 @@ class EnrollmentMonitor(Cog_Extension):
                                 logging.warning(f"找不到設定的 MONITOR_ROLE_CATEGORY_ID: {MONITOR_ROLE_CATEGORY_ID_STR}")
                         except Exception as e:
                              logging.error(f"移動身份組時發生錯誤: {e}")
+                
+                # --- (✅ 修正 1b：使用 send_reply) ---
                 except discord.Forbidden:
-                    await ctx.send("❌ 錯誤：Bot 無法建立或移動身份組，請檢查權限設定。", ephemeral=True)
+                    await send_reply("❌ 錯誤：Bot 無法建立或移動身份組，請檢查權限設定。", ephemeral=True)
                     return
+                # --- (✅ 修正 1c：使用 send_reply) ---
                 except Exception as e:
-                    await ctx.send(f"建立身份組時發生錯誤：{e}", ephemeral=True)
+                    await send_reply(f"建立身份組時發生錯誤：{e}", ephemeral=True)
                     return
 
             # --- 步驟 5：新增任務 ---
@@ -508,11 +521,8 @@ class EnrollmentMonitor(Cog_Extension):
             )
             await creation_message.add_reaction("🔔")
             
-            # --- 步驟 6.5：私下回覆指令發起者 ---
-            if is_private:
-                await ctx.followup.send("✅ 任務已在通知頻道建立！", ephemeral=True)
-            else:
-                await ctx.send("✅ 任務已在通知頻道建立！", ephemeral=True) 
+            # --- 步驟 6.5：私下回覆指令發起者 (此處邏輯本來就是對的) ---
+            await send_reply("✅ 任務已在通知頻道建立！", ephemeral=True)
 
             # --- 步驟 7：執行即時檢查 ---
             status_data = await asyncio.to_thread(_get_course_status, course_id, acad_seme)
@@ -524,7 +534,7 @@ class EnrollmentMonitor(Cog_Extension):
                 max_count = status_data['max']
                 new_status = "AVAILABLE" if current_count < max_count else "FULL"
 
-            # --- 步驟 8：更新 JSON 中的 Message ID 和狀態 ---
+            # --- 步驟 8：更新 JSON ---
             monitor_list = self._load_monitor_list() 
             for job in monitor_list:
                 if job['course_id'] == course_id and job['acad_seme'] == acad_seme:
@@ -533,7 +543,7 @@ class EnrollmentMonitor(Cog_Extension):
                     break
             self._save_monitor_list(monitor_list) 
 
-            # --- 步驟 9：發送初始狀態 (如果抓取成功) ---
+            # --- 步驟 9：發送初始狀態 ---
             if status_data:
                 user_mention = f"{new_role.mention}" 
                 if new_status == "AVAILABLE":
@@ -551,12 +561,15 @@ class EnrollmentMonitor(Cog_Extension):
                 
                 await target_channel.send(user_mention, embed=embed)
 
+        # --- (✅ 修正 1d：使用 send_reply) ---
         except asyncio.TimeoutError:
-            await ctx.send("⌛ 已逾時，請重新執行指令。", ephemeral=True)
+            await send_reply("⌛ 已逾時，請重新執行指令。", ephemeral=True)
+        # --- (✅ 修正 1e：使用 send_reply) ---
         except Exception as e:
-            await ctx.send(f"發生錯誤：{e}", ephemeral=True)
+            await send_reply(f"發生錯誤：{e}", ephemeral=True)
+            logging.error(f"add_monitor_job 發生未處理的錯誤: {e}", exc_info=True) # 增加日誌
 
-    # --- (update_monitor_job - 使用 @monitor.command) ---
+    # --- (update_monitor_job - 保持不變) ---
     @monitor.command(name='update', aliases=['更新學期'], description="更新一個已存在任務的學期碼")
     @app_commands.describe(course_id="要更新的課號", new_acad_seme="新的學期碼 (例如 1141)")
     @commands.has_permissions(manage_roles=True) 
@@ -579,7 +592,7 @@ class EnrollmentMonitor(Cog_Extension):
         else:
             await ctx.send(f"❌ 錯誤：監測清單中找不到課號 `{course_id}`。請先使用 `#monitor add` 新增。", ephemeral=True)
 
-    # --- (remove_monitor_job - 使用 @monitor.command) ---
+    # --- (remove_monitor_job - 保持不變) ---
     @monitor.command(name='remove', aliases=['移除', '刪除'], description="移除一個課程人數監測任務")
     @app_commands.describe(course_id="要移除的課號 (將移除所有學期)")
     @commands.has_permissions(manage_roles=True) 
@@ -625,7 +638,7 @@ class EnrollmentMonitor(Cog_Extension):
                     logging.error(f"刪除身份組 {role.name} (ID: {role_id}) 時發生錯誤: {e}")
         await ctx.send(f"✅ 成功移除課號 `{course_id}` 的 {removed_count} 個監測任務，清理了 {len(set(messages_to_clean))} 則反應訊息，並刪除了 {deleted_roles_count} 個相關身份組。", ephemeral=is_private)
 
-    # --- (list_monitor_jobs - 使用 @monitor.command) ---
+    # --- (list_monitor_jobs - 保持不變) ---
     @monitor.command(name='list', aliases=['清單'], description="顯示所有當前的監測任務")
     async def list_monitor_jobs(self, ctx: commands.Context):
         is_private = ctx.interaction is not None
