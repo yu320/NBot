@@ -29,7 +29,7 @@ URL = "https://netflow.yuntech.edu.tw/netflow.pl"
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning) 
 
 # =========================================================
-# ✅ 核心爬蟲邏輯 (保持不變)
+# ✅ 核心爬蟲邏輯 (已修改 requests timeout)
 # =========================================================
 def _fetch_ip_traffic(target_ip: str) -> Optional[Dict[str, Any]]:
     """
@@ -56,7 +56,8 @@ def _fetch_ip_traffic(target_ip: str) -> Optional[Dict[str, Any]]:
     update_time_pattern = re.compile(r"Current Time: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
     
     try:
-        response = requests.post(URL, data=PAYLOAD, headers=headers, timeout=60, verify=False) 
+        # 這裡的 requests timeout 保持 20 秒
+        response = requests.post(URL, data=PAYLOAD, headers=headers, timeout=20, verify=False) 
         response.raise_for_status()
         logging.info(f"HTTP 請求成功 (IP: {target_ip})")
 
@@ -122,9 +123,9 @@ class IPCrawler(Cog_Extension):
             
         if self.notification_channel_id:
             self.check_ip_traffic.start()
-            logging.info("IP 流量監測任務已啟動。") # ✅ 中文化
+            logging.info("IP 流量監測任務已啟動。")
         else:
-            logging.warning("IP 流量監測任務**未**啟動，因為缺少 IP_MONITOR_CHANNEL_ID。") # ✅ 中文化
+            logging.warning("IP 流量監測任務**未**啟動，因為缺少 IP_MONITOR_CHANNEL_ID。")
             
     def cog_unload(self):
         self.check_ip_traffic.cancel()
@@ -145,7 +146,7 @@ class IPCrawler(Cog_Extension):
             logging.error(f"儲存 IP 監測清單失敗: {e}")
 
     # =========================================================
-    # ✅ (已修改) 背景任務：每 10 分鐘檢查一次
+    # ✅ 背景任務：每 10 分鐘檢查一次
     # =========================================================
     @tasks.loop(minutes=CHECK_INTERVAL_MINUTES)
     async def check_ip_traffic(self):
@@ -166,8 +167,18 @@ class IPCrawler(Cog_Extension):
             last_status = job.get('last_status', "OK") 
             
             # --- 執行爬蟲 ---
-            status_data = await asyncio.to_thread(_fetch_ip_traffic, ip)
-            
+            status_data = None
+            try:
+                # 這裡的 timeout 保持 25.0 秒，這是 background task 的穩定值
+                status_data = await asyncio.wait_for(
+                    asyncio.to_thread(_fetch_ip_traffic, ip),
+                    timeout=25.0
+                )
+            except asyncio.TimeoutError:
+                logging.warning(f"IP {ip} 爬蟲檢查 (asyncio) 超時。")
+            except Exception as e:
+                logging.error(f"IP {ip} 檢查時發生未知錯誤: {e}")
+
             if status_data is None:
                 logging.warning(f"IP {ip} 爬蟲失敗或未找到數據。")
                 continue
@@ -236,7 +247,9 @@ class IPCrawler(Cog_Extension):
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
         
-        # 關鍵修正：如果指令不屬於 'IPCrawler' Cog，就直接退出
+        if isinstance(error, commands.CommandNotFound):
+            return
+            
         if ctx.command and ctx.command.cog_name != 'IPCrawler':
             return
             
@@ -248,19 +261,19 @@ class IPCrawler(Cog_Extension):
             
             if isinstance(error, commands.MissingPermissions):
                 await ctx.send("❌ **權限不足：** 您沒有權限執行此指令。", ephemeral=is_private)
+                return 
             
             elif isinstance(error, commands.MissingRequiredArgument):
                  await ctx.send(f"⚠️ **參數遺漏錯誤：** 您忘記提供 `{error.param.name}` 參數了！", ephemeral=is_private)
             
             else:
-                pass # 其他錯誤上報給 bot.py
+                pass 
 
     # =========================================================
-    # ✅ 指令：設定監測任務 (保持不變)
+    # ✅ 指令：設定監測任務 (已升級為 Hybrid Group)
     # =========================================================
     @commands.hybrid_group(name='ipmonitor', aliases=['ip監測'], description="管理 IP 流量監測任務")
     async def ipmonitor(self, ctx: commands.Context):
-        """管理 IP 流量監測任務。"""
         is_private = ctx.interaction is not None
         
         if ctx.invoked_subcommand is None:
@@ -275,7 +288,7 @@ class IPCrawler(Cog_Extension):
 
     @ipmonitor.command(name='add', aliases=['新增'], description="新增一個 IP 流量監測任務")
     @app_commands.describe(ip_address="要監測的 IP 位址")
-   # @commands.has_permissions(administrator=True) # 僅限管理員
+   # @commands.has_permissions(administrator=True) # 註解掉，所有人可用
     async def add_ip_job(self, ctx: commands.Context, ip_address: str):
         """新增一個 IP 流量監測任務。"""
         is_private = ctx.interaction is not None
@@ -289,13 +302,38 @@ class IPCrawler(Cog_Extension):
             return await ctx.send(f"⚠️ IP `{ip_address}` 已經在監測清單中。", ephemeral=is_private)
             
         # ✅ 遵循「耗時指令」SOP
-        original_message = await ctx.send(f"⏳ 正在嘗試抓取 `{ip_address}` 的初始狀態...", ephemeral=is_private)
+        original_message = None
+        if is_private:
+            await ctx.defer(ephemeral=True)
+        else:
+            original_message = await ctx.send(f"⏳ 正在嘗試抓取 `{ip_address}` 的初始狀態...", ephemeral=is_private) # is_private=False
         
         # --- 執行即時檢查 ---
-        status_data = await asyncio.to_thread(_fetch_ip_traffic, ip_address)
+        status_data = None
+        error_msg = None
+
+        try:
+            # ✅ 修正：強制 15.0 秒超時 (與 calendar.py 保持一致)
+            TIMEOUT_SECONDS = 15.0 
+            
+            # 使用 asyncio.wait_for 包裹爬蟲
+            status_data = await asyncio.wait_for(
+                asyncio.to_thread(_fetch_ip_traffic, ip_address),
+                timeout=TIMEOUT_SECONDS 
+            )
         
-        if status_data is None:
-            error_msg = f"❌ 無法抓取 IP `{ip_address}` 的初始狀態。爬蟲可能失敗或 IP 錯誤。"
+        except asyncio.TimeoutError:
+            logging.warning(f"IP {ip_address} 爬蟲檢查 (asyncio) 超時。")
+            error_msg = f"❌ 查詢 IP `{ip_address}` 超時。伺服器 ({URL}) 沒有在 {TIMEOUT_SECONDS} 秒內回應。"
+        
+        except Exception as e:
+            logging.error(f"IP {ip_address} 檢查時發生未知錯誤: {e}")
+            error_msg = f"❌ 檢查 IP `{ip_address}` 時發生未知錯誤。"
+
+        if status_data is None or error_msg:
+            if not error_msg: # 如果 status_data 是 None 但沒有 error_msg
+                error_msg = f"❌ 無法抓取 IP `{ip_address}` 的初始狀態。爬蟲失敗或 IP 錯誤。"
+            
             if is_private: await ctx.followup.send(error_msg, ephemeral=True)
             else: await original_message.edit(content=error_msg)
             return
@@ -323,7 +361,7 @@ class IPCrawler(Cog_Extension):
 
     @ipmonitor.command(name='remove', aliases=['移除', '刪除'], description="移除一個 IP 流量監測任務")
     @app_commands.describe(ip_address="要移除的 IP 位址")
-    @commands.has_permissions(administrator=True) # 僅限管理員
+    # @commands.has_permissions(administrator=True) # 僅限管理員
     async def remove_ip_job(self, ctx: commands.Context, ip_address: str):
         """移除一個 IP 流量監測任務。"""
         is_private = ctx.interaction is not None
@@ -360,7 +398,6 @@ class IPCrawler(Cog_Extension):
             elif last_status_str == "OVER_LIMIT":
                 last_status_str = "🔴 超量"
             
-            # ✅ (新增) 顯示設定者
             setter_info = "N/A"
             if job.get('user_id'):
                 setter_info = f"<@{job['user_id']}>"
