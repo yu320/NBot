@@ -1,5 +1,5 @@
 import discord
-from discord import app_commands # ✅ 修正：現在 app_commands 已正確匯入
+from discord import app_commands 
 from discord.ext import commands, tasks
 from core.classes import Cog_Extension 
 import json
@@ -11,13 +11,16 @@ from typing import List, Dict, Any, Optional
 import logging
 import re 
 from datetime import datetime
-import urllib3 # ✅ 使用標準 import
+import urllib3 
 
 # --- 設定常量 ---
 IP_MONITOR_FILE = './data/ip_monitor_list.json' # 儲存 IP 監測任務的檔案路徑
 CHECK_INTERVAL_MINUTES = 10           # 檢查間隔 (10 分鐘)
 CRAWL_DELAY_SECONDS = 30              # 每筆 IP 查詢之間的延遲 (慢慢爬)
 TRAFFIC_THRESHOLD_GB = 10.0           # 流量警告閾值 (10 GB)
+
+# 設定爬蟲/任務的通用超時時間為 85.0 秒
+CRAWLER_TIMEOUT_SECONDS = 85.0
 
 # 讀取 IP 通知的頻道 ID
 IP_MONITOR_CHANNEL_ID_STR = os.getenv('IP_MONITOR_CHANNEL_ID') 
@@ -27,9 +30,11 @@ URL = "https://netflow.yuntech.edu.tw/netflow.pl"
 
 # 禁用 SSL 警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning) 
+# 將 urllib3 的日誌等級設為 ERROR，隱藏 HeaderParsingError 警告
+logging.getLogger("urllib3").setLevel(logging.ERROR)
 
 # =========================================================
-# ✅ 核心爬蟲邏輯 (已修改 requests timeout)
+# 核心爬蟲 lógica (Core Crawler Logic)
 # =========================================================
 def _fetch_ip_traffic(target_ip: str) -> Optional[Dict[str, Any]]:
     """
@@ -38,13 +43,22 @@ def _fetch_ip_traffic(target_ip: str) -> Optional[Dict[str, Any]]:
     """
     
     now = datetime.now()
-    year, month, day = str(now.year), str(now.month), str(now.day)
     
-    logging.info(f"開始 IP 數據提取 (IP: {target_ip}, Date: {year}-{month}-{day})")
+    # 原始的非補零字串，用於 Payload
+    year_raw = str(now.year)
+    month_raw = str(now.month)
+    day_raw = str(now.day)
+    
+    # 用於比對的補零字串，確保比對成功 (e.g., '3' -> '03')
+    year_target = year_raw
+    month_target_padded = month_raw.zfill(2)
+    day_target_padded = day_raw.zfill(2)
+    
+    logging.info(f"開始 IP 數據提取 (IP: {target_ip}, Date: {year_raw}-{month_raw}-{day_raw})")
     
     PAYLOAD = {
-        'action': 'ShowIP', 'IP': target_ip, 'year': year,        
-        'month': month, 'day': day, 'submit': '查詢'       
+        'action': 'ShowIP', 'IP': target_ip, 'year': year_raw,        
+        'month': month_raw, 'day': day_raw, 'submit': '查詢'       
     }
     
     headers = {
@@ -56,13 +70,15 @@ def _fetch_ip_traffic(target_ip: str) -> Optional[Dict[str, Any]]:
     update_time_pattern = re.compile(r"Current Time: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
     
     try:
-        # 這裡的 requests timeout 保持 20 秒
-        response = requests.post(URL, data=PAYLOAD, headers=headers, timeout=20, verify=False) 
+        # 移除此處的 timeout 參數。
+        # 超時將由 `add_ip_job` 和 `check_ip_traffic` 中的 `asyncio.wait_for` (外部) 控制。
+        response = requests.post(URL, data=PAYLOAD, headers=headers, verify=False) 
         response.raise_for_status()
         logging.info(f"HTTP 請求成功 (IP: {target_ip})")
 
         soup = BeautifulSoup(response.text, 'html.parser')
         
+        # ✅ 抓取網頁時間 (您要求的爬蟲時間)
         update_time_match = update_time_pattern.search(soup.get_text())
         if update_time_match:
             page_update_time = update_time_match.group(1)
@@ -72,12 +88,17 @@ def _fetch_ip_traffic(target_ip: str) -> Optional[Dict[str, Any]]:
             table = soup.find('table')
         
         if not table:
-            logging.error(f"錯誤 (IP: {target_ip})：找不到網頁表格。")
+            # ✅ 修正：在錯誤日誌中加入網頁時間
+            logging.error(f"錯誤 (IP: {target_ip})：找不到網頁表格。 (網頁時間: {page_update_time})")
             return None
 
         data_rows = table.find_all('tr')
         data_rows_content = data_rows[1:] if len(data_rows) > 0 else [] 
         
+        # ✅ 修正：修改目標日期日誌，並加入網頁爬蟲時間
+        # logging.info(f"[DEBUG] 目標比對 (本機時間): {year_target}/{month_target_padded}/{day_target_padded}")
+        # logging.info(f"[DEBUG] 網頁爬蟲時間 (Current Time): {page_update_time}")
+
         for row in data_rows_content:
             cells = row.find_all('td')
             
@@ -86,17 +107,27 @@ def _fetch_ip_traffic(target_ip: str) -> Optional[Dict[str, Any]]:
                 row_month = cells[1].get_text(strip=True).replace('\xa0', '')
                 row_day = cells[2].get_text(strip=True).replace('\xa0', '')
                 
-                if row_year == year and row_month == month and row_day == day:
-                    total_gb_str = cells[7].get_text(strip=True).replace('\xa0', '')
+                # 將提取的資料標準化為補零字串後，再與目標補零字串比對
+                row_month_normalized = row_month.zfill(2)
+                row_day_normalized = row_day.zfill(2)
+                
+                # [DEBUG] 日誌：紀錄當前行提取的數據 (保持不變)
+                total_traffic = cells[7].get_text(strip=True).replace('\xa0', '')
+                # logging.info(f"[DEBUG] 網頁行數據: Date={row_year}/{row_month_normalized}/{row_day_normalized}, Total={total_traffic} GB")
+
+                if row_year == year_target and row_month_normalized == month_target_padded and row_day_normalized == day_target_padded:
+                    total_gb_str = total_traffic
                     try:
                         total_gb_float = float(total_gb_str)
-                        logging.info(f"✔️ (IP: {target_ip}) 提取成功, Total: {total_gb_float} GB")
+                        # ✅ 修正：在成功日誌中加入網頁時間
+                        logging.info(f"✔️ (IP: {target_ip}) 提取成功, Total: {total_gb_float} GB (網頁時間: {page_update_time})")
                         return {'total_gb': total_gb_float, 'update_time': page_update_time}
                     except ValueError:
                         logging.warning(f"❌ (IP: {target_ip}) 找到行，但 Total 欄位不是數字: {total_gb_str}")
                         return None
         
-        logging.warning(f"❌ (IP: {target_ip}) 找到了表格，但未找到今天的數據。")
+        # ✅ 修正：在警告日誌中加入網頁時間
+        logging.warning(f"❌ (IP: {target_ip}) 找到了表格，但未找到今天的數據。 (網頁時間: {page_update_time})")
         return None
 
     except Exception as e:
@@ -146,7 +177,7 @@ class IPCrawler(Cog_Extension):
             logging.error(f"儲存 IP 監測清單失敗: {e}")
 
     # =========================================================
-    # ✅ 背景任務：每 10 分鐘檢查一次
+    # 背景任務：每 10 分鐘檢查一次
     # =========================================================
     @tasks.loop(minutes=CHECK_INTERVAL_MINUTES)
     async def check_ip_traffic(self):
@@ -169,10 +200,10 @@ class IPCrawler(Cog_Extension):
             # --- 執行爬蟲 ---
             status_data = None
             try:
-                # 這裡的 timeout 保持 25.0 秒，這是 background task 的穩定值
+                # background task 的 asyncio.wait_for 超時設定為 65.0 秒
                 status_data = await asyncio.wait_for(
                     asyncio.to_thread(_fetch_ip_traffic, ip),
-                    timeout=25.0
+                    timeout=CRAWLER_TIMEOUT_SECONDS
                 )
             except asyncio.TimeoutError:
                 logging.warning(f"IP {ip} 爬蟲檢查 (asyncio) 超時。")
@@ -196,18 +227,12 @@ class IPCrawler(Cog_Extension):
             list_changed = True
             job['last_status'] = new_status 
             
-            # =========================================================
-            # ✅ --- 修正開始：獲取設定者 ID ---
-            # =========================================================
             user_mention = ""
             user_id = job.get('user_id')
             if user_id:
                 user_mention = f"<@{user_id}>"
             else:
                 user_mention = f"(設定者: {job.get('set_by', 'N/A')})"
-            # =========================================================
-            # ✅ --- 修正結束 ---
-            # =========================================================
             
             if new_status == "OVER_LIMIT":
                 logging.warning(f"IP {ip} 流量超標！ ({current_traffic_gb} GB)")
@@ -218,7 +243,6 @@ class IPCrawler(Cog_Extension):
                 )
                 embed.set_footer(text=f"頁面更新時間: {page_update_time}")
                 
-                # ✅ --- 修正：發送訊息時加入 user_mention ---
                 await target_channel.send(user_mention, embed=embed)
                 
             else: # new_status == "OK"
@@ -230,7 +254,6 @@ class IPCrawler(Cog_Extension):
                 )
                 embed.set_footer(text=f"頁面更新時間: {page_update_time}")
                 
-                # ✅ --- 修正：發送訊息時加入 user_mention ---
                 await target_channel.send(user_mention, embed=embed)
 
             # --- 慢慢爬 ---
@@ -242,7 +265,7 @@ class IPCrawler(Cog_Extension):
         logging.info("IP 流量檢查完畢。")
 
     # =========================================================
-    # ✅ 錯誤處理 (Error Handler) - (保持不變)
+    # 錯誤處理 (Error Handler) - (保持不變)
     # =========================================================
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -270,7 +293,7 @@ class IPCrawler(Cog_Extension):
                 pass 
 
     # =========================================================
-    # ✅ 指令：設定監測任務 (已升級為 Hybrid Group)
+    # 指令：設定監測任務 (已升級為 Hybrid Group)
     # =========================================================
     @commands.hybrid_group(name='ipmonitor', aliases=['ip監測'], description="管理 IP 流量監測任務")
     async def ipmonitor(self, ctx: commands.Context):
@@ -301,28 +324,29 @@ class IPCrawler(Cog_Extension):
         if any(job['ip'] == ip_address for job in monitor_list):
             return await ctx.send(f"⚠️ IP `{ip_address}` 已經在監測清單中。", ephemeral=is_private)
             
-        # ✅ 遵循「耗時指令」SOP
+        # 遵循「耗時指令」SOP
         original_message = None
         if is_private:
             await ctx.defer(ephemeral=True)
         else:
-            original_message = await ctx.send(f"⏳ 正在嘗試抓取 `{ip_address}` 的初始狀態...", ephemeral=is_private) # is_private=False
+            original_message = await ctx.send(f"⏳ 正在嘗試抓取 `{ip_address}` 的初始狀態...", ephemeral=is_private)
         
         # --- 執行即時檢查 ---
         status_data = None
         error_msg = None
 
         try:
-            # ✅ 修正：強制 15.0 秒超時 (與 calendar.py 保持一致)
-            TIMEOUT_SECONDS = 15.0 
+            # 強制 65.0 秒超時
+            TIMEOUT_SECONDS = CRAWLER_TIMEOUT_SECONDS 
             
-            # 使用 asyncio.wait_for 包裹爬蟲
+            # 這裡的 asyncio.wait_for (65s) 是指令的唯一超時控制
             status_data = await asyncio.wait_for(
                 asyncio.to_thread(_fetch_ip_traffic, ip_address),
                 timeout=TIMEOUT_SECONDS 
             )
         
         except asyncio.TimeoutError:
+            # 這是由 asyncio.wait_for(timeout=65.0) 觸發的
             logging.warning(f"IP {ip_address} 爬蟲檢查 (asyncio) 超時。")
             error_msg = f"❌ 查詢 IP `{ip_address}` 超時。伺服器 ({URL}) 沒有在 {TIMEOUT_SECONDS} 秒內回應。"
         
@@ -331,17 +355,20 @@ class IPCrawler(Cog_Extension):
             error_msg = f"❌ 檢查 IP `{ip_address}` 時發生未知錯誤。"
 
         if status_data is None or error_msg:
-            if not error_msg: # 如果 status_data 是 None 但沒有 error_msg
+            if not error_msg: 
                 error_msg = f"❌ 無法抓取 IP `{ip_address}` 的初始狀態。爬蟲失敗或 IP 錯誤。"
             
-            if is_private: await ctx.followup.send(error_msg, ephemeral=True)
-            else: await original_message.edit(content=error_msg)
+            if is_private: 
+                # (已修正)
+                await ctx.interaction.followup.send(error_msg, ephemeral=True) 
+            else: 
+                await original_message.edit(content=error_msg)
             return
 
         current_traffic_gb = status_data['total_gb']
         new_status = "OVER_LIMIT" if current_traffic_gb > TRAFFIC_THRESHOLD_GB else "OK"
 
-        # --- 新增任務 (已包含 user_id) ---
+        # --- 新增任務 ---
         new_job = {
             "ip": ip_address,
             "user_id": ctx.author.id,      
@@ -356,12 +383,12 @@ class IPCrawler(Cog_Extension):
             f"**IP:** `{ip_address}`\n"
             f"**初始狀態:** {new_status} ({current_traffic_gb} GB)"
         )
-        if is_private: await ctx.followup.send(success_msg, ephemeral=True)
+        # (已修正)
+        if is_private: await ctx.interaction.followup.send(success_msg, ephemeral=True)
         else: await original_message.edit(content=success_msg)
 
     @ipmonitor.command(name='remove', aliases=['移除', '刪除'], description="移除一個 IP 流量監測任務")
     @app_commands.describe(ip_address="要移除的 IP 位址")
-    # @commands.has_permissions(administrator=True) # 僅限管理員
     async def remove_ip_job(self, ctx: commands.Context, ip_address: str):
         """移除一個 IP 流量監測任務。"""
         is_private = ctx.interaction is not None
