@@ -432,7 +432,11 @@ class EnrollmentMonitor(Cog_Extension):
             # prompt (第一個訊息) 已經發送
             # 之後的所有回覆都必須用 followup 或 send
             if is_private:
-                await ctx.followup.send(message_content, ephemeral=ephemeral)
+                # 
+                # ⚠️ 錯誤點：ctx.followup 不存在
+                # 💡 修正點：必須使用 ctx.interaction.followup
+                # 
+                await ctx.interaction.followup.send(message_content, ephemeral=ephemeral) # 👈 *** 已修正 ***
             else:
                 await ctx.send(message_content, ephemeral=ephemeral)
         # ---
@@ -656,7 +660,7 @@ class EnrollmentMonitor(Cog_Extension):
             last_status_str = job.get('last_status', '尚未檢查')
             if last_status_str == "AVAILABLE": last_status_str = "🟢 有空位"
             elif last_status_str == "FULL": last_status_str = "🔴 已額满"
-            elif last_status_str == "ERROR": last_status_str = "❌ 抓取失敗"
+            elif last_status_str == "ERROR": last_status_str = "❌ G"
             role_mention = f"<@&{job['role_id']}>" if 'role_id' in job else "N/A"
             msg_link = "N/A"
             if job.get('reaction_message_id') and job.get('channel_id'):
