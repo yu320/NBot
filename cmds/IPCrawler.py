@@ -145,7 +145,7 @@ class IPCrawler(Cog_Extension):
             logging.error(f"儲存 IP 監測清單失敗: {e}")
 
     # =========================================================
-    # ✅ 背景任務：每 10 分鐘檢查一次
+    # ✅ (已修改) 背景任務：每 10 分鐘檢查一次
     # =========================================================
     @tasks.loop(minutes=CHECK_INTERVAL_MINUTES)
     async def check_ip_traffic(self):
@@ -185,6 +185,19 @@ class IPCrawler(Cog_Extension):
             list_changed = True
             job['last_status'] = new_status 
             
+            # =========================================================
+            # ✅ --- 修正開始：獲取設定者 ID ---
+            # =========================================================
+            user_mention = ""
+            user_id = job.get('user_id')
+            if user_id:
+                user_mention = f"<@{user_id}>"
+            else:
+                user_mention = f"(設定者: {job.get('set_by', 'N/A')})"
+            # =========================================================
+            # ✅ --- 修正結束 ---
+            # =========================================================
+            
             if new_status == "OVER_LIMIT":
                 logging.warning(f"IP {ip} 流量超標！ ({current_traffic_gb} GB)")
                 embed = discord.Embed(
@@ -193,7 +206,9 @@ class IPCrawler(Cog_Extension):
                     color=0xFF0000 # 紅色
                 )
                 embed.set_footer(text=f"頁面更新時間: {page_update_time}")
-                await target_channel.send(embed=embed)
+                
+                # ✅ --- 修正：發送訊息時加入 user_mention ---
+                await target_channel.send(user_mention, embed=embed)
                 
             else: # new_status == "OK"
                 logging.info(f"IP {ip} 流量已恢復正常 ({current_traffic_gb} GB)")
@@ -203,7 +218,9 @@ class IPCrawler(Cog_Extension):
                     color=0x00FF00 # 綠色
                 )
                 embed.set_footer(text=f"頁面更新時間: {page_update_time}")
-                await target_channel.send(embed=embed)
+                
+                # ✅ --- 修正：發送訊息時加入 user_mention ---
+                await target_channel.send(user_mention, embed=embed)
 
             # --- 慢慢爬 ---
             await asyncio.sleep(CRAWL_DELAY_SECONDS) 
@@ -214,7 +231,7 @@ class IPCrawler(Cog_Extension):
         logging.info("IP 流量檢查完畢。")
 
     # =========================================================
-    # ✅ 錯誤處理 (Error Handler) - V3.2 標準
+    # ✅ 錯誤處理 (Error Handler) - (保持不變)
     # =========================================================
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -239,7 +256,7 @@ class IPCrawler(Cog_Extension):
                 pass # 其他錯誤上報給 bot.py
 
     # =========================================================
-    # ✅ 指令：設定監測任務 (已升級為 Hybrid Group)
+    # ✅ 指令：設定監測任務 (保持不變)
     # =========================================================
     @commands.hybrid_group(name='ipmonitor', aliases=['ip監測'], description="管理 IP 流量監測任務")
     async def ipmonitor(self, ctx: commands.Context):
@@ -258,7 +275,7 @@ class IPCrawler(Cog_Extension):
 
     @ipmonitor.command(name='add', aliases=['新增'], description="新增一個 IP 流量監測任務")
     @app_commands.describe(ip_address="要監測的 IP 位址")
-    @commands.has_permissions(administrator=True) # 僅限管理員
+   # @commands.has_permissions(administrator=True) # 僅限管理員
     async def add_ip_job(self, ctx: commands.Context, ip_address: str):
         """新增一個 IP 流量監測任務。"""
         is_private = ctx.interaction is not None
@@ -286,7 +303,7 @@ class IPCrawler(Cog_Extension):
         current_traffic_gb = status_data['total_gb']
         new_status = "OVER_LIMIT" if current_traffic_gb > TRAFFIC_THRESHOLD_GB else "OK"
 
-        # --- 新增任務 ---
+        # --- 新增任務 (已包含 user_id) ---
         new_job = {
             "ip": ip_address,
             "user_id": ctx.author.id,      
@@ -342,12 +359,19 @@ class IPCrawler(Cog_Extension):
                 last_status_str = "🟢 正常"
             elif last_status_str == "OVER_LIMIT":
                 last_status_str = "🔴 超量"
+            
+            # ✅ (新增) 顯示設定者
+            setter_info = "N/A"
+            if job.get('user_id'):
+                setter_info = f"<@{job['user_id']}>"
+            elif job.get('set_by'):
+                setter_info = job['set_by']
 
             embed.add_field(
                 name=f"IP: {job['ip']}",
                 value=(
                     f"目前狀態: **{last_status_str}**\n"
-                    f"設定者: {job.get('set_by', 'N/A')}"
+                    f"設定者: {setter_info}"
                 ),
                 inline=False
             )
