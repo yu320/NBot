@@ -308,7 +308,9 @@ class Music(Cog_Extension):
         await ctx.send(embed=embed, view=view, ephemeral=is_private)
 
 
-    # --- ✅ 指令：匯入歷史紀錄 (轉換為 Hybrid) ---
+    # =========================================================
+    # ✅ 修正後的 import_previous_records 函式
+    # =========================================================
     @commands.hybrid_command(name='importmusic', aliases=['匯入音樂', '抓取紀錄'], description="匯入音樂頻道中尚未紀錄的歷史連結")
     @app_commands.describe(limit="要檢查的訊息數量 (預設 500)")
     async def import_previous_records(self, ctx: commands.Context, limit: int = 500):
@@ -325,10 +327,17 @@ class Music(Cog_Extension):
         if not target_channel:
             return await ctx.send("❌ 錯誤：找不到指定的音樂分享頻道。", ephemeral=True)
 
-        try:
-            msg = await ctx.send(f"⏳ 正在檢查最近 **{limit}** 筆歷史訊息，請稍候...", ephemeral=is_private)
-        except discord.errors.Forbidden:
-            return
+        # --- 修正點 1：(使用 defer 和 send 來處理 "思考中") ---
+        original_message = None # 用於 # 指令
+        if is_private:
+            # / 指令：顯示 "Bot 正在思考..." (私人)
+            await ctx.defer(ephemeral=True)
+        else:
+            # # 指令：發送 "正在檢查..." (公開)
+            try:
+                original_message = await ctx.send(f"⏳ 正在檢查最近 **{limit}** 筆歷史訊息，請稍候...", ephemeral=False)
+            except discord.errors.Forbidden:
+                return # 無法在 # 頻道發言
 
         music_list = self._load_music_list()
         existing_urls = {entry['url'] for entry in music_list}
@@ -380,12 +389,15 @@ class Music(Cog_Extension):
         if not edit_content: # 如果沒出錯
             edit_content = f"✅ 歷史紀錄匯入完成！已檢查 **{checked_count} / {limit}** 筆訊息，並成功匯入 **{imported_count}** 個新的音樂連結。"
         
-        # 回覆
+        # --- 修正點 2：(使用 followup 和 edit 來回覆最終結果) ---
         if is_private:
+            # / 指令：用 followup 回覆 "思考中"
             await ctx.followup.send(edit_content, ephemeral=True)
         else:
-            await msg.edit(content=edit_content)
-
+            # # 指令：編輯原始訊息
+            if original_message: # 確保 # 指令的訊息有成功發送
+                await original_message.edit(content=edit_content)
+    # =========================================================
     
     # --- ✅ 指令：搜尋音樂 (轉換為 Hybrid) ---
     @commands.hybrid_command(name='searchmusic', aliases=['搜尋音樂', 'searchlist'], description="搜尋音樂清單中標題包含關鍵字的歌曲")
