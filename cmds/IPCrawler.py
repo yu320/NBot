@@ -237,7 +237,7 @@ class IPCrawler(Cog_Extension):
             )
             embed.add_field(
                 name=f"1. 新增任務",
-                value=f"`#ipmonitor add <IP位址>`\n(範例：`#ipmonitor add 140.125.203.233`)",
+                value=f"`#ipmonitor add <IP位址>`\n(範例：`#ipmonitor add 140.125.125.123`)",
                 inline=False
             )
             embed.add_field(
