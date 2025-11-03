@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands # ✅ 修正：現在 app_commands 已正確匯入
 from discord.ext import commands, tasks
 from core.classes import Cog_Extension 
 import json
