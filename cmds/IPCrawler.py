@@ -10,13 +10,13 @@ from typing import List, Dict, Any, Optional
 import logging
 import re 
 from datetime import datetime
-import requests.packages.urllib3
+import urllib3 # ✅ 使用標準 import
 
 # --- 設定常量 ---
 IP_MONITOR_FILE = './data/ip_monitor_list.json' # 儲存 IP 監測任務的檔案路徑
-CHECK_INTERVAL_MINUTES = 10                  # 檢查間隔 (10 分鐘)
-CRAWL_DELAY_SECONDS = 30                     # 每筆 IP 查詢之間的延遲 (慢慢爬)
-TRAFFIC_THRESHOLD_GB = 10.0                  # 流量警告閾值 (10 GB)
+CHECK_INTERVAL_MINUTES = 10           # 檢查間隔 (10 分鐘)
+CRAWL_DELAY_SECONDS = 30              # 每筆 IP 查詢之間的延遲 (慢慢爬)
+TRAFFIC_THRESHOLD_GB = 10.0           # 流量警告閾值 (10 GB)
 
 # 讀取 IP 通知的頻道 ID
 IP_MONITOR_CHANNEL_ID_STR = os.getenv('IP_MONITOR_CHANNEL_ID') 
@@ -24,11 +24,11 @@ IP_MONITOR_CHANNEL_ID_STR = os.getenv('IP_MONITOR_CHANNEL_ID')
 # 爬蟲目標 URL
 URL = "https://netflow.yuntech.edu.tw/netflow.pl"
 
-# 禁用 SSL 警告 (來自您的腳本)
-requests.packages.urllib3.disable_warnings() 
+# 禁用 SSL 警告
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning) 
 
 # =========================================================
-# ✅ 核心爬蟲邏輯 (從您的 test_ip_crawler.py 移植)
+# ✅ 核心爬蟲邏輯 (保持不變)
 # =========================================================
 def _fetch_ip_traffic(target_ip: str) -> Optional[Dict[str, Any]]:
     """
@@ -36,15 +36,14 @@ def _fetch_ip_traffic(target_ip: str) -> Optional[Dict[str, Any]]:
     返回 {'total_gb': float, 'update_time': str} 或 None
     """
     
-    # 自動獲取今天的日期
     now = datetime.now()
     year, month, day = str(now.year), str(now.month), str(now.day)
     
     logging.info(f"開始 IP 數據提取 (IP: {target_ip}, Date: {year}-{month}-{day})")
     
     PAYLOAD = {
-        'action': 'ShowIP', 'IP': target_ip, 'year': year,           
-        'month': month, 'day': day, 'submit': '查詢'        
+        'action': 'ShowIP', 'IP': target_ip, 'year': year,        
+        'month': month, 'day': day, 'submit': '查詢'       
     }
     
     headers = {
@@ -56,19 +55,16 @@ def _fetch_ip_traffic(target_ip: str) -> Optional[Dict[str, Any]]:
     update_time_pattern = re.compile(r"Current Time: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
     
     try:
-        # 1. 執行 POST 請求
         response = requests.post(URL, data=PAYLOAD, headers=headers, timeout=60, verify=False) 
         response.raise_for_status()
         logging.info(f"HTTP 請求成功 (IP: {target_ip})")
 
-        # 2. 解析 HTML
         soup = BeautifulSoup(response.text, 'html.parser')
         
         update_time_match = update_time_pattern.search(soup.get_text())
         if update_time_match:
             page_update_time = update_time_match.group(1)
 
-        # 3. 定位表格
         table = soup.find('table', {'width': '95%'}) 
         if not table:
             table = soup.find('table')
@@ -77,11 +73,9 @@ def _fetch_ip_traffic(target_ip: str) -> Optional[Dict[str, Any]]:
             logging.error(f"錯誤 (IP: {target_ip})：找不到網頁表格。")
             return None
 
-        # 4. 遍歷表格的資料行
         data_rows = table.find_all('tr')
         data_rows_content = data_rows[1:] if len(data_rows) > 0 else [] 
         
-        # 尋找今天的數據
         for row in data_rows_content:
             cells = row.find_all('td')
             
@@ -90,7 +84,6 @@ def _fetch_ip_traffic(target_ip: str) -> Optional[Dict[str, Any]]:
                 row_month = cells[1].get_text(strip=True).replace('\xa0', '')
                 row_day = cells[2].get_text(strip=True).replace('\xa0', '')
                 
-                # 檢查是否為今天的日期
                 if row_year == year and row_month == month and row_day == day:
                     total_gb_str = cells[7].get_text(strip=True).replace('\xa0', '')
                     try:
@@ -110,7 +103,6 @@ def _fetch_ip_traffic(target_ip: str) -> Optional[Dict[str, Any]]:
 
 # =========================================================
 
-# ✅ 修正點 1：類別名稱改為 IPCrawler
 class IPCrawler(Cog_Extension):
     
     def __init__(self, bot):
@@ -129,9 +121,9 @@ class IPCrawler(Cog_Extension):
             
         if self.notification_channel_id:
             self.check_ip_traffic.start()
-            logging.info("IP Monitor task started.")
+            logging.info("IP 流量監測任務已啟動。") # ✅ 中文化
         else:
-            logging.warning("IP Monitor task DID NOT start due to missing IP_MONITOR_CHANNEL_ID.")
+            logging.warning("IP 流量監測任務**未**啟動，因為缺少 IP_MONITOR_CHANNEL_ID。") # ✅ 中文化
             
     def cog_unload(self):
         self.check_ip_traffic.cancel()
@@ -170,9 +162,9 @@ class IPCrawler(Cog_Extension):
 
         for job in ip_list:
             ip = job['ip']
-            last_status = job.get('last_status', "OK") # 預設為 "OK"
+            last_status = job.get('last_status', "OK") 
             
-            # --- ✅ 執行爬蟲 ---
+            # --- 執行爬蟲 ---
             status_data = await asyncio.to_thread(_fetch_ip_traffic, ip)
             
             if status_data is None:
@@ -182,10 +174,9 @@ class IPCrawler(Cog_Extension):
             current_traffic_gb = status_data['total_gb']
             page_update_time = status_data['update_time']
             
-            # --- ✅ 判斷邏輯 ---
+            # --- 判斷邏輯 ---
             new_status = "OVER_LIMIT" if current_traffic_gb > TRAFFIC_THRESHOLD_GB else "OK"
             
-            # 如果狀態沒有改變，就跳過
             if new_status == last_status:
                 continue
                 
@@ -194,7 +185,6 @@ class IPCrawler(Cog_Extension):
             job['last_status'] = new_status 
             
             if new_status == "OVER_LIMIT":
-                # 從 OK -> OVER_LIMIT
                 logging.warning(f"IP {ip} 流量超標！ ({current_traffic_gb} GB)")
                 embed = discord.Embed(
                     title="🚨 IP 流量警告：流量超標",
@@ -205,7 +195,6 @@ class IPCrawler(Cog_Extension):
                 await target_channel.send(embed=embed)
                 
             else: # new_status == "OK"
-                # 從 OVER_LIMIT -> OK
                 logging.info(f"IP {ip} 流量已恢復正常 ({current_traffic_gb} GB)")
                 embed = discord.Embed(
                     title="✅ IP 流量狀態：已恢復正常",
@@ -215,8 +204,7 @@ class IPCrawler(Cog_Extension):
                 embed.set_footer(text=f"頁面更新時間: {page_update_time}")
                 await target_channel.send(embed=embed)
 
-            # --- ✅ 慢慢爬 ---
-            # 檢查完一筆後，休息 30 秒再查下一筆
+            # --- 慢慢爬 ---
             await asyncio.sleep(CRAWL_DELAY_SECONDS) 
 
         if list_changed:
@@ -225,53 +213,73 @@ class IPCrawler(Cog_Extension):
         logging.info("IP 流量檢查完畢。")
 
     # =========================================================
-    # ✅ 指令：設定監測任務
+    # ✅ 錯誤處理 (Error Handler) - V3.2 標準
     # =========================================================
-    @commands.group(name='ipmonitor', invoke_without_command=True, aliases=['ip監測'])
-    async def ipmonitor(self, ctx):
+    @commands.Cog.listener()
+    async def on_command_error(self, ctx, error):
+        
+        # 關鍵修正：如果指令不屬於 'IPCrawler' Cog，就直接退出
+        if ctx.command and ctx.command.cog_name != 'IPCrawler':
+            return
+            
+        logging.warning(f"IPCrawler Cog 捕獲到指令錯誤 (指令: {ctx.command}, 錯誤: {error})")
+
+        is_private = ctx.interaction is not None
+        
+        if ctx.command and (ctx.command.name == 'ipmonitor' or (ctx.command.root_parent and ctx.command.root_parent.name == 'ipmonitor')):
+            
+            if isinstance(error, commands.MissingPermissions):
+                await ctx.send("❌ **權限不足：** 您沒有權限執行此指令。", ephemeral=is_private)
+            
+            elif isinstance(error, commands.MissingRequiredArgument):
+                 await ctx.send(f"⚠️ **參數遺漏錯誤：** 您忘記提供 `{error.param.name}` 參數了！", ephemeral=is_private)
+            
+            else:
+                pass # 其他錯誤上報給 bot.py
+
+    # =========================================================
+    # ✅ 指令：設定監測任務 (已升級為 Hybrid Group)
+    # =========================================================
+    @commands.hybrid_group(name='ipmonitor', aliases=['ip監測'], description="管理 IP 流量監測任務")
+    async def ipmonitor(self, ctx: commands.Context):
         """管理 IP 流量監測任務。"""
+        is_private = ctx.interaction is not None
+        
         if ctx.invoked_subcommand is None:
             embed = discord.Embed(
                 title="📈 IP 流量監測管理",
                 color=0x00AEEF
             )
-            embed.add_field(
-                name=f"1. 新增任務",
-                value=f"`#ipmonitor add <IP位址>`\n(範例：`#ipmonitor add 140.125.203.233`)",
-                inline=False
-            )
-            embed.add_field(
-                name=f"2. 查看清單",
-                value=f"`#ipmonitor list`",
-                inline=False
-            )
-            embed.add_field(
-                name=f"3. 移除任務",
-                value=f"`#ipmonitor remove <IP位址>`",
-                inline=False
-            )
-            await ctx.send(embed=embed)
+            embed.add_field(name=f"1. 新增任務", value=f"`{ctx.prefix}ipmonitor add <IP位址>`", inline=False)
+            embed.add_field(name=f"2. 查看清單", value=f"`{ctx.prefix}ipmonitor list`", inline=False)
+            embed.add_field(name=f"3. 移除任務", value=f"`{ctx.prefix}ipmonitor remove <IP位址>`", inline=False)
+            await ctx.send(embed=embed, ephemeral=is_private)
 
-    @ipmonitor.command(name='add', aliases=['新增'])
+    @ipmonitor.command(name='add', aliases=['新增'], description="新增一個 IP 流量監測任務")
+    @app_commands.describe(ip_address="要監測的 IP 位址")
     @commands.has_permissions(administrator=True) # 僅限管理員
-    async def add_ip_job(self, ctx, ip_address: str):
+    async def add_ip_job(self, ctx: commands.Context, ip_address: str):
         """新增一個 IP 流量監測任務。"""
+        is_private = ctx.interaction is not None
         
         if not self.notification_channel_id:
-            return await ctx.send("❌ 錯誤：管理員尚未設定通知頻道 (IP_MONITOR_CHANNEL_ID)。")
+            return await ctx.send("❌ 錯誤：管理員尚未設定通知頻道 (IP_MONITOR_CHANNEL_ID)。", ephemeral=is_private)
 
         monitor_list = self._load_ip_list()
         
         if any(job['ip'] == ip_address for job in monitor_list):
-            return await ctx.send(f"⚠️ IP `{ip_address}` 已經在監測清單中。", delete_after=10)
+            return await ctx.send(f"⚠️ IP `{ip_address}` 已經在監測清單中。", ephemeral=is_private)
             
-        await ctx.send(f"⏳ 正在嘗試抓取 `{ip_address}` 的初始狀態...")
+        # ✅ 遵循「耗時指令」SOP
+        original_message = await ctx.send(f"⏳ 正在嘗試抓取 `{ip_address}` 的初始狀態...", ephemeral=is_private)
         
         # --- 執行即時檢查 ---
         status_data = await asyncio.to_thread(_fetch_ip_traffic, ip_address)
         
         if status_data is None:
-            await ctx.send(f"❌ 無法抓取 IP `{ip_address}` 的初始狀態。爬蟲可能失敗或 IP 錯誤。")
+            error_msg = f"❌ 無法抓取 IP `{ip_address}` 的初始狀態。爬蟲可能失敗或 IP 錯誤。"
+            if is_private: await ctx.followup.send(error_msg, ephemeral=True)
+            else: await original_message.edit(content=error_msg)
             return
 
         current_traffic_gb = status_data['total_gb']
@@ -280,41 +288,46 @@ class IPCrawler(Cog_Extension):
         # --- 新增任務 ---
         new_job = {
             "ip": ip_address,
-            "user_id": ctx.author.id,     
+            "user_id": ctx.author.id,      
             "set_by": ctx.author.display_name,
             "last_status": new_status # 儲存初始狀態
         }
         monitor_list.append(new_job)
         self._save_ip_list(monitor_list)
         
-        await ctx.send(
+        success_msg = (
             f"✅ 成功新增監測任務：\n"
             f"**IP:** `{ip_address}`\n"
             f"**初始狀態:** {new_status} ({current_traffic_gb} GB)"
         )
+        if is_private: await ctx.followup.send(success_msg, ephemeral=True)
+        else: await original_message.edit(content=success_msg)
 
-    @ipmonitor.command(name='remove', aliases=['移除', '刪除'])
+    @ipmonitor.command(name='remove', aliases=['移除', '刪除'], description="移除一個 IP 流量監測任務")
+    @app_commands.describe(ip_address="要移除的 IP 位址")
     @commands.has_permissions(administrator=True) # 僅限管理員
-    async def remove_ip_job(self, ctx, ip_address: str):
+    async def remove_ip_job(self, ctx: commands.Context, ip_address: str):
         """移除一個 IP 流量監測任務。"""
+        is_private = ctx.interaction is not None
         monitor_list = self._load_ip_list()
         initial_count = len(monitor_list)
         
         monitor_list = [job for job in monitor_list if job['ip'] != ip_address]
         
         if len(monitor_list) == initial_count:
-            return await ctx.send(f"❌ 錯誤：監測清單中找不到 IP `{ip_address}`。")
+            return await ctx.send(f"❌ 錯誤：監測清單中找不到 IP `{ip_address}`。", ephemeral=is_private)
             
         self._save_ip_list(monitor_list)
-        await ctx.send(f"✅ 成功移除 IP `{ip_address}` 的監測任務。")
+        await ctx.send(f"✅ 成功移除 IP `{ip_address}` 的監測任務。", ephemeral=is_private)
 
-    @ipmonitor.command(name='list', aliases=['清單'])
-    async def list_ip_jobs(self, ctx):
+    @ipmonitor.command(name='list', aliases=['清單'], description="顯示所有當前的 IP 監測任務")
+    async def list_ip_jobs(self, ctx: commands.Context):
         """顯示所有當前的 IP 監測任務。"""
+        is_private = ctx.interaction is not None
         monitor_list = self._load_ip_list()
         
         if not monitor_list:
-            return await ctx.send("目前沒有任何 IP 監測任務。")
+            return await ctx.send("目前沒有任何 IP 監測任務。", ephemeral=is_private)
             
         embed = discord.Embed(
             title="📈 當前 IP 流量監測清單",
@@ -338,11 +351,7 @@ class IPCrawler(Cog_Extension):
                 inline=False
             )
             
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, ephemeral=is_private)
 
-
-# =========================================================
-# ✅ 修正點 2：確保 setup 函式中的名稱與 class 名稱一致
-# =========================================================
 async def setup(bot):
-    await bot.add_cog(IPCrawler(bot)) # <-- 修正為 IPCrawler
+    await bot.add_cog(IPCrawler(bot))
