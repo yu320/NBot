@@ -101,7 +101,7 @@ class Help(Cog_Extension):
                         inline=False
                     )
 
-        embed.set_footer(text=f"NBot | {ctx.guild.name if ctx.guild else 'DM 中'} | 使用 {prefix}help 或 /help")
+        embed.set_footer(text=f"©宿宿小夥伴 | {ctx.guild.name if ctx.guild else 'DM 中'} | 使用 {prefix}help 或 /help")
 
         # 4. 發送回覆
         await ctx.send(embed=embed, ephemeral=is_private)
