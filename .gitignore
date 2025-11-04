@@ -28,5 +28,5 @@ setting.json
 __pycache__/
 *.pyc
 GAS
-data/
+data/*
 !data/meetup_keywords.json
