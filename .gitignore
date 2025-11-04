@@ -29,3 +29,4 @@ __pycache__/
 *.pyc
 GAS
 data/
+!data/meetup_keywords.json
