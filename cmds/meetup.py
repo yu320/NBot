@@ -138,7 +138,7 @@ class Meetup(Cog_Extension):
                 value=f"點擊下方的 {MEETUP_REACTION_EMOJI} 表情符號即可加入身份組！", 
                 inline=False
             )
-        embed.set_footer(text=f"戰鬥邀請發起於: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        embed.set_footer(text=f"戰鬥邀請發起於: {datetime.now().strftime('%Y-%m-%d %H:%M')}汪汪！")
         return embed
 
     # =========================================================
@@ -216,7 +216,7 @@ class Meetup(Cog_Extension):
         content_lower = msg.content.lower() # 轉換為小寫以方便比對
         if any(keyword.lower() in content_lower for keyword in self.meetup_keywords):
             try:
-                await msg.channel.send(f"想揪團了嗎？ {msg.author.mention} \n試試看使用 `/eat add` 或 `{self.bot.command_prefix}eat add` 來發起一個戰鬥邀請吧！", delete_after=15)
+                await msg.channel.send(f"想揪團了嗎？ {msg.author.mention} \n試試看使用 `/eat add` 或 `{self.bot.command_prefix}eat add` 來發起一個戰鬥邀請吧汪汪汪！", delete_after=15)
             except discord.Forbidden:
                 pass 
             except Exception as e:
@@ -273,12 +273,12 @@ class Meetup(Cog_Extension):
     # 4. 指令群組 (Hybrid Command Group)
     # =========================================================
     
-    @commands.hybrid_group(name='eat', aliases=['約吃飯', '吃飯'], description="管理約飯戰鬥邀請")
+    @commands.hybrid_group(name='eat', aliases=['約吃飯', '吃飯'], description="管理戰鬥邀請")
     async def eat(self, ctx: commands.Context):
         is_private = ctx.interaction is not None
         if ctx.invoked_subcommand is None:
             prefix = ctx.prefix
-            embed = discord.Embed(title="🍜 戰鬥邀請管理", description="這是一系列管理約飯戰鬥邀請的指令。", color=0xFF8C00)
+            embed = discord.Embed(title="🍜 戰鬥邀請管理", description="這是一系列管理戰鬥邀請的指令汪汪。", color=0xFF8C00)
             embed.add_field(name=f"1. 發起戰鬥邀請 (需 {REQUIRED_ROLE_NAME} 身份組)", value=f"`{prefix}eat add [標題] [地點] [時間(選填)] [備註(選填)]`", inline=False)
             embed.add_field(name="2. 修改地點 (僅限發起人/管理員)", value=f"`{prefix}eat edit_location [戰鬥邀請訊息ID] [新地點]`", inline=False)
             embed.add_field(name="3. 取消戰鬥邀請 (僅限發起人/管理員)", value=f"`{prefix}eat cancel [戰鬥邀請訊息ID]`", inline=False)
@@ -286,7 +286,7 @@ class Meetup(Cog_Extension):
             await ctx.send(embed=embed, ephemeral=is_private)
 
     # --- 4.1 子指令：add (發起戰鬥邀請) ---
-    @eat.command(name='add', aliases=['發起', 'create'], description="發起一個新的約飯戰鬥邀請")
+    @eat.command(name='add', aliases=['發起', 'create'], description="發起一個新的戰鬥邀請")
     @app_commands.describe(
         title="戰鬥邀請標題 (例如: 晚餐團)",
         location="地點 (例如: 麥當勞 斗六中山店)",
@@ -312,7 +312,7 @@ class Meetup(Cog_Extension):
                 name=role_name, 
                 permissions=discord.Permissions.none(), 
                 mentionable=True, 
-                reason=f"由 {ctx.author} 發起的約飯戰鬥邀請"
+                reason=f"由 {ctx.author} 發起的戰鬥邀請汪汪"
             )
         except discord.Forbidden:
             return await ctx.send("❌ 錯誤：Bot 權限不足，無法建立身份組。", ephemeral=True)
@@ -446,8 +446,8 @@ class Meetup(Cog_Extension):
     #
     # ✅ 5. 新增：重新載入關鍵字指令
     #
-    @eat.command(name='reload_keywords', aliases=['重載關鍵字'], description="[僅限管理員] 重新載入約飯關鍵字清單")
-    @commands.has_permissions(manage_guild=True) # 限制只有管理員能用
+    @eat.command(name='reload_keywords', aliases=['重載關鍵字'], description="[僅限管理員] 重新載入戰鬥的關鍵字清單")
+    # @commands.has_permissions(manage_guild=True) # 限制只有管理員能用
     async def reload_keywords(self, ctx: commands.Context):
         is_private = ctx.interaction is not None
         try:
