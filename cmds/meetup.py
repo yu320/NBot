@@ -192,7 +192,7 @@ class Meetup(Cog_Extension):
     async def on_message(self, msg: discord.Message):
         if msg.author == self.bot.user:
             return
-        if "想要吃" in msg.content or "想去吃" in msg.content or "吃" in msg.content  or "想去" in msg.content:# 檢查關鍵字
+        if "想要吃" in msg.content or "想去吃" in msg.content or "吃" in msg.content  or "去" in msg.content:# 檢查關鍵字
             try:
                 await msg.channel.send(f"想揪團了嗎？ {msg.author.mention} \n試試看使用 `/eat add` 或 `{self.bot.command_prefix}eat add` 來發起一個戰鬥邀請吧！", delete_after=15)
             except discord.Forbidden:
