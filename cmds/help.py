@@ -49,6 +49,7 @@ class Help(Cog_Extension):
             "EnrollmentMonitor": "📚 課程監測",
             "IPCrawler": "📈 IP 流量監測",
             "Main": "⚙️ 核心功能",
+            "StockMonitor": "📊 公園走起"
             # "Help": "🤖 幫助" # (我們通常不在 help 中顯示 help)
         }
 
