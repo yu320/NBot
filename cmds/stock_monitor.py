@@ -18,8 +18,9 @@ STOCK_LIST_FILE = './data/stock_list.json' # 儲存股票代碼的檔案
 CHECK_TIME_TW = time(12, 0, 0) # 每天台灣時間 12:00:00 執行
 PROXIMITY_THRESHOLD = 0.01 # 接近 MA20 的閾值 (1%)
 
-# 讀取通知頻道 ID
+# 讀取通知頻道 ID 和身分組 ID
 STOCK_MONITOR_CHANNEL_ID_STR = os.getenv('STOCK_MONITOR_CHANNEL_ID') 
+STOCK_MONITOR_ROLE_ID_STR = os.getenv('STOCK_MONITOR_ROLE_ID') # <<-- 新增讀取身分組 ID
 
 
 # =========================================================
@@ -30,7 +31,7 @@ def _load_stock_list() -> List[str]:
     """
     從 JSON 檔案讀取股票清單。如果檔案不存在，會建立一個預設的範例檔案。
     """
-    default_list = [] 
+    default_list = ["2330.TW", "AAPL"] 
     os.makedirs('./data', exist_ok=True)
     try:
         if not os.path.exists(STOCK_LIST_FILE):
@@ -191,6 +192,14 @@ class StockMonitor(Cog_Extension):
         else:
             logging.error("STOCK_MONITOR_CHANNEL_ID 未設定或格式錯誤，股票監測通知將無法發送！")
 
+        self.role_mention_tag = ""
+        if STOCK_MONITOR_ROLE_ID_STR and STOCK_MONITOR_ROLE_ID_STR.isdigit():
+            # 將 ID 轉換為 Discord 的 @身分組 格式
+            self.role_mention_tag = f"<@&{STOCK_MONITOR_ROLE_ID_STR}>"
+            logging.info(f"股票通知將會 @身分組 ID: {STOCK_MONITOR_ROLE_ID_STR}")
+        else:
+            logging.warning("STOCK_MONITOR_ROLE_ID 未設定或格式錯誤，通知將不會 @身分組。")
+
         # 啟動定時任務
         if self.notification_channel_id:
             self.daily_stock_check.start()
@@ -207,7 +216,6 @@ class StockMonitor(Cog_Extension):
         await self.bot.wait_until_ready()
         
         # 確保在股市開盤日才執行 (這裡只做簡單判斷，實際應排除週末/假日)
-        # 簡單的邏輯：如果今天是週末，則跳過
         today = datetime.now().weekday()
         if today >= 5: # 5: 星期六, 6: 星期日
             logging.info("本日為週末，跳過股票定時檢查任務。")
@@ -259,13 +267,13 @@ class StockMonitor(Cog_Extension):
             embed.set_footer(text=f"分析基準: 3個月數據 / 1% 接近閾值")
             embed.timestamp = datetime.now()
             
-            await target_channel.send(embed=embed)
+            # <<-- 修正點 1：在訊息內容中加入身分組標記 -->>
+            content = f"📢 {self.role_mention_tag} 發現 **{len(all_signals)}** 個股票訊號！" if self.role_mention_tag else "📢 發現股票訊號！"
+            await target_channel.send(content=content, embed=embed)
             logging.info(f"成功發送 {len(all_signals)} 個股票訊號通知。")
             
         else:
             logging.info("所有監測股票均未發現新訊號。")
-            # 也可以選擇發送一個 "無訊號" 的通知，以證明任務有執行
-            # await target_channel.send(f"✅ 每日股票檢查完成，未發現新訊號。")
             
         logging.info("股票定時檢查任務結束。")
 
@@ -403,8 +411,11 @@ class StockMonitor(Cog_Extension):
                     inline=False
                 )
             
+            # <<-- 修正點 2：在訊息內容中加入身分組標記 -->>
+            content = f"📢 {self.role_mention_tag} 發現 **{len(all_signals)}** 個股票訊號！" if self.role_mention_tag else "📢 發現股票訊號！"
+            
             # 發送到通知頻道 (公開)
-            await target_channel.send(f"📢 發現 **{len(all_signals)}** 個股票訊號！", embed=embed)
+            await target_channel.send(content=content, embed=embed)
             reply_content = f"✅ 手動檢查完成，已將報告發送至通知頻道。"
             
         else:
