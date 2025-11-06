@@ -8,6 +8,9 @@ import logging
 from datetime import time, datetime, timedelta
 from typing import List, Dict, Any, Optional
 
+# (修正點 1：引入 Python 內建的時區函式庫)
+from zoneinfo import ZoneInfo
+
 # --- 引入股票所需的核心函式庫 ---
 import requests
 import pandas as pd
@@ -15,16 +18,21 @@ import pandas as pd
 
 # --- 設定常量 ---
 STOCK_LIST_FILE = './data/stock_list.json' # 儲存股票代碼的檔案
-CHECK_TIME_TW = time(12, 0, 0) # 每天台灣時間 12:00:00 執行
 PROXIMITY_THRESHOLD = 0.01 # 接近 MA20 的閾值 (1%)
+
+# (修正點 2：建立一個明確的 "Asia/Taipei" 時區物件)
+TAIWAN_TZ = ZoneInfo("Asia/Taipei")
+
+# (修正點 3：將 "天真" 時間改為 "帶有時區" 的時間)
+CHECK_TIME_TW = time(12, 0, 0, tzinfo=TAIWAN_TZ) # 每天台灣時間 12:00:00 執行
 
 # 讀取通知頻道 ID 和身分組 ID
 STOCK_MONITOR_CHANNEL_ID_STR = os.getenv('STOCK_MONITOR_CHANNEL_ID') 
-STOCK_MONITOR_ROLE_ID_STR = os.getenv('STOCK_MONITOR_ROLE_ID') # <<-- 新增讀取身分組 ID
+STOCK_MONITOR_ROLE_ID_STR = os.getenv('STOCK_MONITOR_ROLE_ID') 
 
 
 # =========================================================
-# 股票資料核心處理函式 (改編自 crew_json.py)
+# 股票資料核心處理函式 (保持不變)
 # =========================================================
 
 def _load_stock_list() -> List[str]:
@@ -68,7 +76,6 @@ def _fetch_stock_data(stock_id: str, range_='3mo', interval_='1d') -> Optional[p
     params = {'range': range_, 'interval': interval_, 'region': 'TW', 'lang': 'zh-Hant-TW'}
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36'}
     try:
-        # 使用 requests (會在 asyncio.to_thread 中執行)
         response = requests.get(url, params=params, headers=headers, timeout=10)
         response.raise_for_status()
         data = response.json()
@@ -203,7 +210,8 @@ class StockMonitor(Cog_Extension):
         # 啟動定時任務
         if self.notification_channel_id:
             self.daily_stock_check.start()
-            logging.info(f"股票監測任務已啟動，預計每天 {CHECK_TIME_TW} 執行。")
+            # (修正點 4：在啟動日誌中顯示時區，確保無誤)
+            logging.info(f"股票監測任務已啟動，預計每天 {CHECK_TIME_TW.isoformat()} (時區: {CHECK_TIME_TW.tzinfo}) 執行。")
         else:
             logging.warning("股票監測任務**未**啟動，因為缺少 STOCK_MONITOR_CHANNEL_ID。")
             
@@ -215,10 +223,12 @@ class StockMonitor(Cog_Extension):
     async def daily_stock_check(self):
         await self.bot.wait_until_ready()
         
-        # 確保在股市開盤日才執行 (這裡只做簡單判斷，實際應排除週末/假日)
-        today = datetime.now().weekday()
+        # (修正點 5：使用帶有時區的 "now" 來檢查星期)
+        now_in_taiwan = datetime.now(TAIWAN_TZ)
+        today = now_in_taiwan.weekday()
+        
         if today >= 5: # 5: 星期六, 6: 星期日
-            logging.info("本日為週末，跳過股票定時檢查任務。")
+            logging.info(f"本日 ({now_in_taiwan.strftime('%A')}) 為週末，跳過股票定時檢查任務。")
             return
         
         stock_list = _load_stock_list()
@@ -228,6 +238,7 @@ class StockMonitor(Cog_Extension):
              logging.warning("股票清單為空或頻道不存在，定時檢查任務跳過。")
              return
 
+        # 這裡的日誌現在一定會在 12:00 (台灣時間) 觸發
         logging.info(f"開始執行 {len(stock_list)} 支股票的定時檢查...")
         
         all_signals = [] # 儲存所有股票的訊號
@@ -249,7 +260,7 @@ class StockMonitor(Cog_Extension):
         # 2. 統整並發送通知
         if all_signals:
             
-            embed_title = f"📢 每日股票訊號報告 ({datetime.now().strftime('%Y-%m-%d')})"
+            embed_title = f"📢 每日股票訊號報告 ({now_in_taiwan.strftime('%Y-%m-%d')})"
             embed = discord.Embed(
                 title=embed_title,
                 description=f"總共發現 **{len(all_signals)}** 個技術訊號。",
@@ -265,9 +276,8 @@ class StockMonitor(Cog_Extension):
             
             # 設置底部資訊和時間戳
             embed.set_footer(text=f"分析基準: 3個月數據 / 1% 接近閾值")
-            embed.timestamp = datetime.now()
+            embed.timestamp = now_in_taiwan
             
-            # <<-- 修正點 1：在訊息內容中加入身分組標記 -->>
             content = f"📢 {self.role_mention_tag} 發現 **{len(all_signals)}** 個股票訊號！" if self.role_mention_tag else "📢 發現股票訊號！"
             await target_channel.send(content=content, embed=embed)
             logging.info(f"成功發送 {len(all_signals)} 個股票訊號通知。")
@@ -278,7 +288,7 @@ class StockMonitor(Cog_Extension):
         logging.info("股票定時檢查任務結束。")
 
     # =========================================================
-    # 指令群組：管理股票清單
+    # 指令群組：管理股票清單 (保持不變)
     # =========================================================
     
     @commands.hybrid_group(name='stock', aliases=['股票'], description="管理每日股票監測清單")
@@ -395,12 +405,13 @@ class StockMonitor(Cog_Extension):
 
         
         reply_content = ""
+        now_in_taiwan = datetime.now(TAIWAN_TZ)
         
         if all_signals:
             embed_title = f"🔔 手動檢查報告：發現 {len(all_signals)} 個訊號"
             embed = discord.Embed(
                 title=embed_title,
-                description=f"檢查時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                description=f"檢查時間：{now_in_taiwan.strftime('%Y-%m-%d %H:%M:%S')}",
                 color=discord.Color.red() if any(s[1]['type'] == '穿越' for s in all_signals) else discord.Color.blue()
             )
             
@@ -411,7 +422,6 @@ class StockMonitor(Cog_Extension):
                     inline=False
                 )
             
-            # <<-- 修正點 2：在訊息內容中加入身分組標記 -->>
             content = f"📢 {self.role_mention_tag} 發現 **{len(all_signals)}** 個股票訊號！" if self.role_mention_tag else "📢 發現股票訊號！"
             
             # 發送到通知頻道 (公開)
