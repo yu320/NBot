@@ -24,7 +24,8 @@ PROXIMITY_THRESHOLD = 0.01 # 接近 MA20 的閾值 (1%)
 TAIWAN_TZ = ZoneInfo("Asia/Taipei")
 
 # (修正點 3：將 "天真" 時間改為 "帶有時區" 的時間)
-CHECK_TIME_TW = time(13, 0, 0, tzinfo=TAIWAN_TZ) # 每天台灣時間 12:00:00 執行
+# (修正點 6：將時間改為 13:45，確保台股已收盤)
+CHECK_TIME_TW = time(13, 15, 0, tzinfo=TAIWAN_TZ) # 每天台灣時間 13:45 執行
 
 # 讀取通知頻道 ID 和身分組 ID
 STOCK_MONITOR_CHANNEL_ID_STR = os.getenv('STOCK_MONITOR_CHANNEL_ID') 
@@ -207,21 +208,36 @@ class StockMonitor(Cog_Extension):
         else:
             logging.warning("STOCK_MONITOR_ROLE_ID 未設定或格式錯誤，通知將不會 @身分組。")
 
-        # 啟動定時任務
-        if self.notification_channel_id:
-            self.daily_stock_check.start()
-            # (修正點 4：在啟動日誌中顯示時區，確保無誤)
-            logging.info(f"股票監測任務已啟動，預計每天 {CHECK_TIME_TW.isoformat()} (時區: {CHECK_TIME_TW.tzinfo}) 執行。")
-        else:
-            logging.warning("股票監測任務**未**啟動，因為缺少 STOCK_MONITOR_CHANNEL_ID。")
+        # 
+        # ✅ 修正 1：移除 __init__ 中的 .start()
+        #
+        # 啟動定時任務 (已移至 on_ready 監聽器中)
+        if not self.notification_channel_id:
+            logging.warning("股票監測任務**無法**啟動，因為缺少 STOCK_MONITOR_CHANNEL_ID。")
             
+    #
+    # ✅ 修正 2：新增 on_ready 監聽器來啟動任務
+    #
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """當此 Cog 所在的 Bot 準備就緒時"""
+        
+        # 確保只在 Bot 準備好後才啟動任務
+        # 並且檢查任務是否已在運行 (防止重複啟動)
+        if not self.daily_stock_check.is_running():
+            if self.notification_channel_id:
+                self.daily_stock_check.start()
+                logging.info(f"股票監測任務已在 on_ready 中啟動，預計每天 {CHECK_TIME_TW.isoformat()} (時區: {CHECK_TIME_TW.tzinfo}) 執行。")
+
     def cog_unload(self):
         self.daily_stock_check.cancel()
         
-    # --- 定時任務：每天 12:00 檢查 ---
+    # --- 定時任務：每天 13:45 檢查 ---
     @tasks.loop(time=CHECK_TIME_TW)
     async def daily_stock_check(self):
-        await self.bot.wait_until_ready()
+        #
+        # ✅ 修正 3：移除 wait_until_ready()
+        #
         
         # (修正點 5：使用帶有時區的 "now" 來檢查星期)
         now_in_taiwan = datetime.now(TAIWAN_TZ)
@@ -238,7 +254,7 @@ class StockMonitor(Cog_Extension):
              logging.warning("股票清單為空或頻道不存在，定時檢查任務跳過。")
              return
 
-        # 這裡的日誌現在一定會在 12:00 (台灣時間) 觸發
+        # 這裡的日誌現在一定會在 13:45 (台灣時間) 觸發
         logging.info(f"開始執行 {len(stock_list)} 支股票的定時檢查...")
         
         all_signals = [] # 儲存所有股票的訊號
