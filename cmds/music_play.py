@@ -4,15 +4,14 @@ from core.classes import Cog_Extension
 import asyncio
 import yt_dlp # 您已經安裝了
 import re
-import os     
-import json   
-import random 
-import logging 
+import os
+import json
+import random
+import logging
 from discord import app_commands # ✅ 1. 引入 app_commands
 
 # --- yt-dlp 和 FFmpeg 設定 ---
 YDL_OPTS = {
-    # 優先選取壓縮過的格式 (m4a, aac, opus)，減少 RAM 負擔
     'format': 'bestaudio[ext=m4a]/bestaudio[ext=aac]/bestaudio[ext=opus]/bestaudio/best',
     'noplaylist': True, 
     'quiet': True,
@@ -46,7 +45,8 @@ class MusicPlay(Cog_Extension):
         if ctx.guild.id not in self.guild_states:
             self.guild_states[ctx.guild.id] = {
                 'song_queue': [],
-                'is_playing': False
+                'is_playing': False,
+                'now_playing': None  # <-- ✅ 變更 1: 儲存正在播放的歌曲
             }
         return self.guild_states[ctx.guild.id]
 
@@ -73,6 +73,7 @@ class MusicPlay(Cog_Extension):
         if not state['song_queue']:
             # 佇列已空
             state['is_playing'] = False
+            state['now_playing'] = None # <-- ✅ 變更 2: 佇列為空時，清除 "正在播放"
             
             #
             # --- 自動離開邏輯 (已註解) ---
@@ -92,6 +93,7 @@ class MusicPlay(Cog_Extension):
         
         # 從佇列取出下一首歌
         song = state['song_queue'].pop(0)
+        state['now_playing'] = song # <-- ✅ 變更 3: 設定 "正在播放"
         vc = ctx.voice_client
 
         if not vc:
@@ -128,11 +130,10 @@ class MusicPlay(Cog_Extension):
             after=lambda e: self.bot.loop.create_task(self.song_finished(ctx, e))
         )
         
-        # ✅ 播放通知：一律公開
-        await ctx.send(f"🎶 正在播放: **{song['title']}** (請求者: {song['requester'].display_name})")
-
+        # ✅ 播放通知：已註解，避免洗頻
+        # await ctx.send(f"🎶 正在播放: **{song['title']}** (請求者: {song['requester'].display_name})") # <-- ✅ 變更 4: 註解此行
     # =========================================================
-    # ✅ 指令：播放音樂 (轉換為 Hybrid)
+    # ✅ 指令：播放音樂 (Hybrid)
     # =========================================================
     @commands.hybrid_command(name="play", aliases=['p'], description="播放音樂 (URL 或 搜尋關鍵字)")
     @app_commands.describe(search="YouTube 關鍵字或 URL")
@@ -211,11 +212,11 @@ class MusicPlay(Cog_Extension):
         for song in songs_to_add:
              if song['webpage_url']:
                  state['song_queue'].append(song)
-             
+                 
         if len(songs_to_add) == 1:
             reply_content = f"✅ 已加入佇列: **{songs_to_add[0]['title']}**"
         else:
-             reply_content = f"✅ 已將 **{len(songs_to_add)}** 首歌從播放清單 **{playlist_title}** 加入佇列！"
+            reply_content = f"✅ 已將 **{len(songs_to_add)}** 首歌從播放清單 **{playlist_title}** 加入佇列！"
 
         if is_private: await ctx.followup.send(reply_content, ephemeral=True)
         else: await msg.edit(content=reply_content)
@@ -225,7 +226,7 @@ class MusicPlay(Cog_Extension):
             await self.play_next_song(ctx)
 
     # =========================================================
-    # ✅ 指令：播放 data/music_list.json (轉換為 Hybrid)
+    # ✅ 指令：播放 data/music_list.json (Hybrid)
     # =========================================================
     @commands.hybrid_command(name="playlist", aliases=['播放清單音樂', 'pl'], description="播放 data/music_list.json 中的所有音樂 (隨機排序)")
     async def playlist(self, ctx: commands.Context):
@@ -288,7 +289,7 @@ class MusicPlay(Cog_Extension):
             await self.play_next_song(ctx)
 
     # =========================================================
-    # ✅ 指令：離開頻道 (轉換為 Hybrid)
+    # ✅ 指令：離開頻道 (Hybrid)
     # =========================================================
     @commands.hybrid_command(name="stop", aliases=['leave', 'dc'], description="停止播放並離開語音頻道")
     async def stop(self, ctx: commands.Context):
@@ -305,6 +306,7 @@ class MusicPlay(Cog_Extension):
         
         state['song_queue'] = []
         state['is_playing'] = False
+        state['now_playing'] = None # <-- ✅ 變更 5: 停止時清除 "正在播放"
         if ctx.voice_client.is_playing():
             ctx.voice_client.stop()
             
@@ -315,7 +317,7 @@ class MusicPlay(Cog_Extension):
             del self.guild_states[ctx.guild.id]
 
     # =========================================================
-    # ✅ 指令：跳過歌曲 (轉換為 Hybrid)
+    # ✅ 指令：跳過歌曲 (Hybrid)
     # =========================================================
     @commands.hybrid_command(name="skip", aliases=['s'], description="跳過目前正在播放的歌曲")
     async def skip(self, ctx: commands.Context):
@@ -332,8 +334,8 @@ class MusicPlay(Cog_Extension):
 
         if not state['is_playing']:
             if state['song_queue']:
-                 await ctx.send("...佇列卡住，正在啟動下一首。", ephemeral=is_private)
-                 await self.play_next_song(ctx)
+                await ctx.send("...佇列卡住，正在啟動下一首。", ephemeral=is_private)
+                await self.play_next_song(ctx)
             else:
                 await ctx.send("目前沒有歌曲正在播放。", ephemeral=is_private)
             return
@@ -342,36 +344,52 @@ class MusicPlay(Cog_Extension):
         await ctx.send("⏭️ 已跳過目前歌曲。", ephemeral=is_private)
 
 
+    # =--------------------------------------------------------
+    # ✅ 指令：查看佇列 (已升級：顯示 "正在播放" + "佇列")
+    # ✅ 變更 6: 完整替換此函式
     # =========================================================
-    # ✅ 指令：查看佇列 (轉換為 Hybrid)
-    # =========================================================
-    @commands.hybrid_command(name="queue", aliases=['q'], description="顯示目前的播放佇列")
+    @commands.hybrid_command(name="queue", aliases=['q', 'np', 'nowplaying'], description="顯示目前播放的歌曲與佇列")
     async def queue(self, ctx: commands.Context):
         """
-        顯示目前的播放佇列。
-        指令格式: #queue
+        顯示目前播放的歌曲與佇列。
+        指令格式: #queue (或 #np)
         """
         is_private = ctx.interaction is not None
         state = self.get_guild_state(ctx)
-        queue = state['song_queue']
+        
+        current_song = state.get('now_playing')
+        song_queue = state.get('song_queue', [])
 
-        if not queue:
-            return await ctx.send("目前播放佇列是空的。", ephemeral=is_private)
+        if not current_song and not song_queue:
+            return await ctx.send("目前沒有歌曲正在播放，佇列也是空的。", ephemeral=is_private)
 
         embed = discord.Embed(title="🎶 播放佇列", color=0x1DB954)
+
+        # 1. 顯示目前播放的歌曲
+        if current_song:
+            embed.add_field(
+                name=f"▶️ **正在播放**",
+                value=f"**{current_song['title']}**\n(請求者: {current_song['requester'].display_name})",
+                inline=False
+            )
+            if song_queue: # 如果佇列還有歌，加上分隔
+                embed.add_field(name="-"*40, value="**接下來：**", inline=False)
         
-        for i, song in enumerate(queue[:10]):
+        # 2. 顯示佇列
+        for i, song in enumerate(song_queue[:10]):
             embed.add_field(
                 name=f"**{i+1}. {song['title']}**", 
                 value=f"請求者: {song['requester'].display_name}", 
                 inline=False
             )
         
-        if len(queue) > 10:
-            embed.set_footer(text=f"...還有 {len(queue) - 10} 首歌在佇列中")
+        # 3. 顯示佇列總數
+        if len(song_queue) > 10:
+            embed.set_footer(text=f"...還有 {len(song_queue) - 10} 首歌在佇列中")
+        elif not song_queue and current_song:
+            embed.set_footer(text="佇列中沒有其他歌曲了。")
 
         await ctx.send(embed=embed, ephemeral=is_private)
-
     # =========================================================
     # ✅ 指令錯誤處理函式 (已修正)
     # =========================================================
@@ -391,7 +409,7 @@ class MusicPlay(Cog_Extension):
             'playlist', '播放清單音樂', 'pl',
             'stop', 'leave', 'dc',
             'skip', 's',
-            'queue', 'q'
+            'queue', 'q', 'np', 'nowplaying' # <-- ✅ 變更 7: 加入新別名
         ]
 
         if ctx.command and ctx.command.name in MUSIC_PLAY_COMMANDS:
