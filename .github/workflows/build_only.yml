@@ -39,7 +39,7 @@ jobs:
           push: true
           tags: |
             ${{ env.GHCR_REPO }}:latest
-            ${{ env.GHCR_REPO }}:${{ github.sha }} # 使用 commit SHA 作為標籤，用於版本追蹤
+            ${{ env.GHCR_REPO }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           

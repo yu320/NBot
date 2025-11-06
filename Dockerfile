@@ -38,15 +38,16 @@ RUN pip install --upgrade pip && \
 # 使用相同的 Python 輕量級映像檔，但這次不安裝編譯工具
 FROM python:3.12-slim
 
-# --- ✅ 新增：安裝 ffmpeg ---
+# --- ✅ 修正：安裝 ffmpeg 和 tzdata ---
 # 設定環境變數，避免安裝過程中產生互動式提示
 ENV DEBIAN_FRONTEND=noninteractive
-# 安裝 ffmpeg (yt-dlp 會用到)
+# 安裝 ffmpeg (yt-dlp 會用到) 和 tzdata (排程任務需要)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
+        tzdata \
     && rm -rf /var/lib/apt/lists/*
-# --- ✅ 新增結束 ---
+# --- ✅ 修正結束 ---
 
 # 設定最終執行環境的工作目錄
 WORKDIR /app
