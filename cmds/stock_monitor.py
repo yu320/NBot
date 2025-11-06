@@ -25,7 +25,7 @@ TAIWAN_TZ = ZoneInfo("Asia/Taipei")
 
 # (修正點 3：將 "天真" 時間改為 "帶有時區" 的時間)
 # (修正點 6：將時間改為 13:45，確保台股已收盤)
-CHECK_TIME_TW = time(13, 15, 0, tzinfo=TAIWAN_TZ) # 每天台灣時間 13:45 執行
+CHECK_TIME_TW = time(13, 20, 0, tzinfo=TAIWAN_TZ) # 每天台灣時間 13:45 執行
 
 # 讀取通知頻道 ID 和身分組 ID
 STOCK_MONITOR_CHANNEL_ID_STR = os.getenv('STOCK_MONITOR_CHANNEL_ID') 
