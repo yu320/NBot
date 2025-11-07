@@ -94,7 +94,7 @@ async def on_ready():
     # if CHANNEL_ID:
     #     channel = bot.get_channel(int(CHANNEL_ID))
     #     if channel:
-    #         await channel.send('我上線了 汪!')
+    #         await channel.send('汪汪（上線啦）')
     #     else:
     #         logging.warning(f"Channel ID {CHANNEL_ID} not found.")
 
