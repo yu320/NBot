@@ -91,12 +91,12 @@ async def on_ready():
     logging.info(f">> bot is online  {bot.user.name} <<")
     
     # # 1. 發送 Discord 頻道上線通知 (確保 CHANNEL_ID 存在)
-    # if CHANNEL_ID:
-    #     channel = bot.get_channel(int(CHANNEL_ID))
-    #     if channel:
-    #         await channel.send('汪汪（上線啦）')
-    #     else:
-    #         logging.warning(f"Channel ID {CHANNEL_ID} not found.")
+     if CHANNEL_ID:
+         channel = bot.get_channel(int(CHANNEL_ID))
+         if channel:
+             await channel.send('汪汪（上線啦）')
+         else:
+             logging.warning(f"Channel ID {CHANNEL_ID} not found.")
 
     # 2. 啟動 Uptime Kuma 心跳任務
     if UPTIME_KUMA_URL and not send_heartbeat.is_running():
