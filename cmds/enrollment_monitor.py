@@ -157,11 +157,21 @@ class EnrollmentMonitor(Cog_Extension):
         self.default_acad_seme = DEFAULT_ACAD_SEME
         self._load_config() 
             
-        if self.notification_channel_id:
-            self.check_enrollment.start()
-            logging.info("課程監測任務已啟動。")
-        else:
+        # ✅ 已移除 self.check_enrollment.start()，改至 on_ready 中啟動
+        if not self.notification_channel_id:
             logging.warning("課程監測任務**未**啟動，因為缺少 MONITOR_CHANNEL_ID。")
+
+    # =========================================================
+    # ✅ 新增：在機器人準備就緒後才啟動背景任務
+    # =========================================================
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """當機器人準備就緒時啟動任務"""
+        # 防止因重新連線導致重複啟動
+        if not self.check_enrollment.is_running():
+            if self.notification_channel_id:
+                self.check_enrollment.start()
+                logging.info("課程監測任務已啟動 (於 on_ready)。")
             
     def cog_unload(self):
         self.check_enrollment.cancel()
@@ -207,7 +217,7 @@ class EnrollmentMonitor(Cog_Extension):
             logging.error(f"儲存 {CONFIG_FILE} 失敗: {e}")
 
     # =========================================================
-    # 表情符號反應監聽器 (Reaction Listeners) - (保持不變)
+    # 表情符號反應監聽器 (Reaction Listeners)
     # =========================================================
     
     async def _get_job_by_reaction_message(self, message_id: int) -> Optional[Dict[str, Any]]:
@@ -301,7 +311,7 @@ class EnrollmentMonitor(Cog_Extension):
             logging.error(f"移除身份組時失敗: {e}")
 
     # =========================================================
-    # ✅ 修正 2：修改背景任務
+    # 背景任務
     # =========================================================
     @tasks.loop(seconds=CHECK_INTERVAL_SECONDS)
     async def check_enrollment(self):
@@ -379,7 +389,7 @@ class EnrollmentMonitor(Cog_Extension):
         logging.info(f"課程監測輪詢結束，共檢查 {len(monitor_list)} 個任務。")
 
     # =========================================================
-    # 錯誤監聽器 (保持不變)
+    # 錯誤監聽器
     # =========================================================
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
@@ -400,12 +410,12 @@ class EnrollmentMonitor(Cog_Extension):
                  await ctx.send(f"⚠️ **參數類型錯誤：** {error}", ephemeral=True)
             
             elif isinstance(error, commands.MissingRequiredArgument):
-                 await ctx.send(f"⚠️ **參數遺 問題：** 您忘記提供 `{error.param.name}` 參數了！", ephemeral=True)
+                 await ctx.send(f"⚠️ **參數遺漏錯誤：** 您忘記提供 `{error.param.name}` 參數了！", ephemeral=True)
             else:
                 pass
 
     # =========================================================
-    # 指令：設定監測任務 (保持不變)
+    # 指令：設定監測任務
     # =========================================================
     @commands.hybrid_group(name='monitor', aliases=['監測', '課表監測'], description="管理課程人數監測任務")
     async def monitor(self, ctx: commands.Context):
@@ -680,7 +690,7 @@ class EnrollmentMonitor(Cog_Extension):
         for job in monitor_list:
             last_status_str = job.get('last_status', '尚未檢查')
             if last_status_str == "AVAILABLE": last_status_str = "🟢 有空位"
-            elif last_status_T == "FULL": last_status_str = "🔴 已額满"
+            elif last_status_str == "FULL": last_status_str = "🔴 已額满"
             elif last_status_str == "ERROR": last_status_str = "❌ 抓取失敗"
             
             # 🆕 (未來優化：如果您決定在 check_enrollment 中儲存 course_name，可以在此處顯示)
@@ -702,7 +712,6 @@ class EnrollmentMonitor(Cog_Extension):
                 inline=False
             )
         await ctx.send(embed=embed, ephemeral=is_private)
-
 
 async def setup(bot):
     await bot.add_cog(EnrollmentMonitor(bot))
