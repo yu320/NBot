@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional
 import logging
 import re
 import urllib3 
-from discord import app_commands # 引入 app_commands
+from discord import app_commands 
 
 # --- 設定常量 ---
 MONITOR_FILE = './data/monitor_list.json' 
@@ -26,7 +26,7 @@ MONITOR_ROLE_CATEGORY_ID_STR = os.getenv('MONITOR_ROLE_CATEGORY_ID')
 # 禁用 requests 呼叫 verify=False 時產生的警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning) 
 
-# --- 爬蟲核心函式 (保持不變) ---
+# --- 爬蟲核心函式 ---
 def _fetch_state_keys() -> Optional[Dict[str, str]]:
     GET_URL = "https://webapp.yuntech.edu.tw/WebNewCAS/Course/QueryCour.aspx"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
@@ -52,10 +52,7 @@ def _fetch_state_keys() -> Optional[Dict[str, str]]:
         return None
     return None
 
-# =========================================================
-# ✅ 修正 1：修改爬蟲核心
-# =========================================================
-def _get_course_status(course_id: str, acad_seme: str) -> Optional[Dict[str, Any]]: # <-- 返回類型已修改
+def _get_course_status(course_id: str, acad_seme: str) -> Optional[Dict[str, Any]]: 
     TARGET_URL = "https://webapp.yuntech.edu.tw/WebNewCAS/Course/QueryCour.aspx" 
     state_keys = _fetch_state_keys()
     if not state_keys:
@@ -112,8 +109,11 @@ def _get_course_status(course_id: str, acad_seme: str) -> Optional[Dict[str, Any
                 current_count_text = cells[9].text.strip()
                 current_count = int(current_count_text)
                 
-                # 🆕 抓取課程名稱 (cells[2])
+                # 抓取課程名稱 (cells[2])
                 course_name_text = cells[2].text.strip()
+
+                # ✅ 新增：抓取星期/節次/教室 (cells[7])
+                schedule_text = cells[7].text.strip()
                 
                 # 抓取人數上限 (cells[10])
                 max_count_text = cells[10].text.strip()
@@ -124,8 +124,13 @@ def _get_course_status(course_id: str, acad_seme: str) -> Optional[Dict[str, Any
                 elif "限" not in max_count_text:
                     max_count = 999 
                 
-                # 🆕 修改回傳值，加入 course_name
-                return {'current': current_count, 'max': max_count, 'course_name': course_name_text}
+                # ✅ 將 schedule 放入回傳的字典中
+                return {
+                    'current': current_count, 
+                    'max': max_count, 
+                    'course_name': course_name_text,
+                    'schedule': schedule_text 
+                }
                 
             except Exception as e:
                 logging.warning(f"課號 {course_id} 找到行但解析人數時出錯: {e}")
@@ -137,7 +142,6 @@ def _get_course_status(course_id: str, acad_seme: str) -> Optional[Dict[str, Any
         logging.error(f"爬蟲請求失敗: {e}")
         return None
 
-# =========================================================
 
 class EnrollmentMonitor(Cog_Extension):
     
@@ -157,17 +161,12 @@ class EnrollmentMonitor(Cog_Extension):
         self.default_acad_seme = DEFAULT_ACAD_SEME
         self._load_config() 
             
-        # ✅ 已移除 self.check_enrollment.start()，改至 on_ready 中啟動
         if not self.notification_channel_id:
             logging.warning("課程監測任務**未**啟動，因為缺少 MONITOR_CHANNEL_ID。")
 
-    # =========================================================
-    # ✅ 新增：在機器人準備就緒後才啟動背景任務
-    # =========================================================
     @commands.Cog.listener()
     async def on_ready(self):
         """當機器人準備就緒時啟動任務"""
-        # 防止因重新連線導致重複啟動
         if not self.check_enrollment.is_running():
             if self.notification_channel_id:
                 self.check_enrollment.start()
@@ -217,9 +216,8 @@ class EnrollmentMonitor(Cog_Extension):
             logging.error(f"儲存 {CONFIG_FILE} 失敗: {e}")
 
     # =========================================================
-    # 表情符號反應監聽器 (Reaction Listeners)
+    # 表情符號反應監聽器
     # =========================================================
-    
     async def _get_job_by_reaction_message(self, message_id: int) -> Optional[Dict[str, Any]]:
         """輔助函式：透過 reaction_message_id 尋找監測任務"""
         monitor_list = self._load_monitor_list()
@@ -238,8 +236,7 @@ class EnrollmentMonitor(Cog_Extension):
             return
         
         job = await self._get_job_by_reaction_message(payload.message_id)
-        if not job:
-            return 
+        if not job: return 
 
         guild = self.bot.get_guild(payload.guild_id)
         if not guild: return
@@ -261,8 +258,7 @@ class EnrollmentMonitor(Cog_Extension):
             logging.error(f"抓取成員 {payload.user_id} 時失敗: {e}")
             return
         
-        if not member: 
-            return 
+        if not member: return 
         
         try:
             if role not in member.roles:
@@ -346,6 +342,9 @@ class EnrollmentMonitor(Cog_Extension):
             # 🆕 從 status_data 獲取課程名稱，如果失敗則使用課號 (course_id) 作為備用
             course_name = status_data.get('course_name', course_id)
             
+            # ✅ 從爬蟲資料中取得上課時間/地點
+            schedule_info = status_data.get('schedule', '未提供')
+            
             new_status = "AVAILABLE" if current_count < max_count else "FULL"
             
             if new_status == last_status:
@@ -369,6 +368,9 @@ class EnrollmentMonitor(Cog_Extension):
                 )
                 embed.add_field(name="當前人數 (Sel.)", value=f"**{current_count}** 人", inline=True)
                 embed.add_field(name="限制人數 (Max)", value=f"**{max_count}** 人", inline=True)
+                # ✅ 將時間/教室加入 Embed
+                embed.add_field(name="📍 時間/教室", value=f"`{schedule_info}`", inline=False)
+                
                 await target_channel.send(user_mention, embed=embed)
                 
             else: # new_status == "FULL"
@@ -381,6 +383,9 @@ class EnrollmentMonitor(Cog_Extension):
                 )
                 embed.add_field(name="當前人數 (Sel.)", value=f"**{current_count}** 人", inline=True)
                 embed.add_field(name="限制人數 (Max)", value=f"**{max_count}** 人", inline=True)
+                # ✅ 將時間/教室加入 Embed
+                embed.add_field(name="📍 時間/教室", value=f"`{schedule_info}`", inline=False)
+                
                 await target_channel.send(user_mention, embed=embed)
 
         if list_changed:
@@ -393,26 +398,18 @@ class EnrollmentMonitor(Cog_Extension):
     # =========================================================
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
-        
         if ctx.command and ctx.command.cog_name != 'EnrollmentMonitor':
             return
             
         logging.warning(f"課程監測(EnrollmentMonitor) Cog 捕獲到指令錯誤 (指令: {ctx.command}, 錯誤: {error})")
 
-        is_private = ctx.interaction is not None
-        
         if ctx.command and ctx.command.name in ['monitor', 'add', 'update', 'remove', 'list', 'setdefault']:
-            
             if isinstance(error, commands.MissingPermissions):
                 await ctx.send("❌ **權限不足：** 您沒有權限執行此指令。", ephemeral=True, delete_after=10)
-            
             elif isinstance(error, commands.BadArgument):
                  await ctx.send(f"⚠️ **參數類型錯誤：** {error}", ephemeral=True)
-            
             elif isinstance(error, commands.MissingRequiredArgument):
                  await ctx.send(f"⚠️ **參數遺漏錯誤：** 您忘記提供 `{error.param.name}` 參數了！", ephemeral=True)
-            else:
-                pass
 
     # =========================================================
     # 指令：設定監測任務
@@ -420,7 +417,6 @@ class EnrollmentMonitor(Cog_Extension):
     @commands.hybrid_group(name='monitor', aliases=['監測', '課表監測'], description="管理課程人數監測任務")
     async def monitor(self, ctx: commands.Context):
         is_private = ctx.interaction is not None
-        
         if ctx.invoked_subcommand is None:
             embed = discord.Embed(title="📚 課程人數監測管理", description="這是一系列監測指令。", color=0x4682B4)
             embed.add_field(name=f"1. 新增任務 (互動式)", value=f"`{ctx.prefix}monitor add` 或 `/monitor add`", inline=False)
@@ -434,21 +430,17 @@ class EnrollmentMonitor(Cog_Extension):
     @app_commands.describe(semester_code="新的預設學期碼 (例如: 1151)")
     async def set_default_semester(self, ctx: commands.Context, semester_code: str):
         is_private = ctx.interaction is not None
-
         if len(semester_code) != 4 or not semester_code.isdigit():
              return await ctx.send(f"⚠️ 格式錯誤。學期碼必須是 4 位數字 (例如: 1151)。", ephemeral=True)
-        
         try:
             old_seme = self.default_acad_seme
             self.default_acad_seme = semester_code
             self._save_config() 
-            
             await ctx.send(f"✅ 成功更新預設學期！\n"
                          f"舊預設值: `{old_seme}`\n"
                          f"新預設值: `{self.default_acad_seme}`\n"
                          f"未來使用 `/monitor add` 將自動套用 `{self.default_acad_seme}`。",
                          ephemeral=is_private)
-                         
         except Exception as e:
             await ctx.send(f"❌ 儲存設定失敗: {e}", ephemeral=True)
 
@@ -498,7 +490,6 @@ class EnrollmentMonitor(Cog_Extension):
                 pass 
             
             acad_seme = self.default_acad_seme
-
             monitor_list = self._load_monitor_list()
             
             if any(job['course_id'] == course_id and job['acad_seme'] == acad_seme for job in monitor_list):
@@ -580,6 +571,9 @@ class EnrollmentMonitor(Cog_Extension):
                 # 🆕 獲取課程名稱
                 course_name = status_data.get('course_name', course_id)
                 
+                # ✅ 從爬蟲資料中取得上課時間/地點
+                schedule_info = status_data.get('schedule', '未提供')
+                
                 if new_status == "AVAILABLE":
                     embed_title = "🟢 初始狀態：有空位"
                     # 🆕 修改 Embed 描述
@@ -594,6 +588,9 @@ class EnrollmentMonitor(Cog_Extension):
                 embed = discord.Embed(title=embed_title, description=embed_desc, color=embed_color)
                 embed.add_field(name="當前人數 (Sel.)", value=f"**{current_count}** 人", inline=True)
                 embed.add_field(name="限制人數 (Max)", value=f"**{max_count}** 人", inline=True)
+                
+                # ✅ 將時間/教室加入 Embed
+                embed.add_field(name="📍 時間/教室", value=f"`{schedule_info}`", inline=False)
                 
                 await target_channel.send(user_mention, embed=embed)
 
