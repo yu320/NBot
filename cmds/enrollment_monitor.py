@@ -376,6 +376,8 @@ class EnrollmentMonitor(Cog_Extension):
         if list_changed:
             self._save_monitor_list(monitor_list)
 
+        logging.info(f"課程監測輪詢結束，共檢查 {len(monitor_list)} 個任務。")
+
     # =========================================================
     # 錯誤監聽器 (保持不變)
     # =========================================================
