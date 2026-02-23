@@ -16,7 +16,7 @@ from discord import app_commands # 引入 app_commands
 MONITOR_FILE = './data/monitor_list.json' 
 CONFIG_FILE = './data/monitor_config.json' 
 
-CHECK_INTERVAL_SECONDS = 180  # 每 3 分鐘檢查一次           
+CHECK_INTERVAL_SECONDS = 65  # 每 3 分鐘檢查一次           
 DEFAULT_ACAD_SEME = "1142" # (保留作為初始的備用值)
 
 # --- 讀取全域通知頻道 ID ---
