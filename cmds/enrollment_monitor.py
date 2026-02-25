@@ -26,16 +26,10 @@ MONITOR_ROLE_CATEGORY_ID_STR = os.getenv('MONITOR_ROLE_CATEGORY_ID')
 # 禁用 requests 呼叫 verify=False 時產生的警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning) 
 
-# --- 建立全域 Session 與 Retry ---
-session = requests.Session()
-retries = urllib3.util.Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
-session.mount('https://', requests.adapters.HTTPAdapter(max_retries=retries))
-session.mount('http://', requests.adapters.HTTPAdapter(max_retries=retries))
-
 # --- 爬蟲核心函式 ---
-def _fetch_state_keys() -> Optional[Dict[str, str]]:
+def _fetch_state_keys(session: requests.Session) -> Optional[Dict[str, str]]:
     GET_URL = "https://webapp.yuntech.edu.tw/WebNewCAS/Course/QueryCour.aspx"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'}
     try:
         response = session.get(GET_URL, headers=headers, timeout=20, verify=False)
         response.raise_for_status() 
@@ -60,93 +54,99 @@ def _fetch_state_keys() -> Optional[Dict[str, str]]:
 
 def _get_course_status(course_id: str, acad_seme: str) -> Optional[Dict[str, Any]]: 
     TARGET_URL = "https://webapp.yuntech.edu.tw/WebNewCAS/Course/QueryCour.aspx" 
-    state_keys = _fetch_state_keys()
-    if not state_keys:
-        return None
-    payload = {
-        'ctl00_MainContent_ToolkitScriptManager1$HiddenField': state_keys['ToolkitScriptManager'],
-        '__LASTFOCUS': '',
-        '__EVENTTARGET': '',
-        '__EVENTARGUMENT': '',
-        '__VIEWSTATE': state_keys['VIEWSTATE'],
-        '__VIEWSTATEGENERATOR': state_keys['VIEWSTATEGENERATOR'],
-        '__VIEWSTATEENCRYPTED': '',
-        '__EVENTVALIDATION': state_keys['EVENTVALIDATION'],
-        'ctl00$MainContent$AcadSeme': acad_seme, 
-        'ctl00$MainContent$College': '',
-        'ctl00$MainContent$DeptCode': '',
-        'ctl00$MainContent$CurrentSubj': course_id, 
-        'ctl00$MainContent$TextBoxWatermarkExtender3_ClientState': '',
-        'ctl00$MainContent$SubjName': '',
-        'ctl00$MainContent$TextBoxWatermarkExtender1_ClientState': '',
-        'ctl00$MainContent$Instructor': '',
-        'ctl00$MainContent$TextBoxWatermarkExtender2_ClientState': '',
-        'ctl00$MainContent$Submit': '執行查詢',
-    }
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Referer': TARGET_URL
-    }
-    try:
-        response = session.post(TARGET_URL, data=payload, headers=headers, timeout=30, verify=False)
-        response.raise_for_status() 
-        soup = BeautifulSoup(response.text, 'html.parser')
-        course_table = soup.find('table', id='ctl00_MainContent_Course_GridView') 
-        if not course_table:
-             logging.error(f"課號 {course_id} 爬蟲失敗：找不到結果表格 ID。")
-             return None
-        rows = course_table.find_all('tr')
-        data_row = None
-        for row in rows[1:]: 
-            cells = row.find_all('td')
-            if len(cells) > 0:
-                 course_id_in_table = cells[0].text.strip()
-                 course_id_in_table = re.sub(r'\s+', '', course_id_in_table) 
-                 if course_id_in_table == course_id: 
-                     data_row = row
-                     break
-        if not data_row:
-            logging.warning(f"課號 {course_id} 在學期 {acad_seme} 的查詢結果中未找到該行數據。")
+    
+    with requests.Session() as session:
+        retries = urllib3.util.Retry(total=3, backoff_factor=0.5, status_forcelist=[500, 502, 503, 504])
+        session.mount('https://', requests.adapters.HTTPAdapter(max_retries=retries))
+        session.mount('http://', requests.adapters.HTTPAdapter(max_retries=retries))
+        
+        state_keys = _fetch_state_keys(session)
+        if not state_keys:
             return None
-        cells = data_row.find_all('td')
-        if len(cells) > 10: 
-            try:
-                # 抓取人數 (cells[9])
-                current_count_text = cells[9].text.strip()
-                current_count = int(current_count_text)
-                
-                # 抓取課程名稱 (cells[2])
-                course_name_text = cells[2].text.strip()
-
-                # ✅ 新增：抓取星期/節次/教室 (cells[7])
-                schedule_text = cells[7].text.strip()
-                
-                # 抓取人數上限 (cells[10])
-                max_count_text = cells[10].text.strip()
-                max_match = re.search(r'(\d+)', max_count_text) 
-                max_count = 999 
-                if max_match:
-                    max_count = int(max_match.group(1))
-                elif "限" not in max_count_text:
-                    max_count = 999 
-                
-                # ✅ 將 schedule 放入回傳的字典中
-                return {
-                    'current': current_count, 
-                    'max': max_count, 
-                    'course_name': course_name_text,
-                    'schedule': schedule_text 
-                }
-                
-            except Exception as e:
-                logging.warning(f"課號 {course_id} 找到行但解析人數時出錯: {e}")
+        payload = {
+            'ctl00_MainContent_ToolkitScriptManager1$HiddenField': state_keys['ToolkitScriptManager'],
+            '__LASTFOCUS': '',
+            '__EVENTTARGET': '',
+            '__EVENTARGUMENT': '',
+            '__VIEWSTATE': state_keys['VIEWSTATE'],
+            '__VIEWSTATEGENERATOR': state_keys['VIEWSTATEGENERATOR'],
+            '__VIEWSTATEENCRYPTED': '',
+            '__EVENTVALIDATION': state_keys['EVENTVALIDATION'],
+            'ctl00$MainContent$AcadSeme': acad_seme, 
+            'ctl00$MainContent$College': '',
+            'ctl00$MainContent$DeptCode': '',
+            'ctl00$MainContent$CurrentSubj': course_id, 
+            'ctl00$MainContent$TextBoxWatermarkExtender3_ClientState': '',
+            'ctl00$MainContent$SubjName': '',
+            'ctl00$MainContent$TextBoxWatermarkExtender1_ClientState': '',
+            'ctl00$MainContent$Instructor': '',
+            'ctl00$MainContent$TextBoxWatermarkExtender2_ClientState': '',
+            'ctl00$MainContent$Submit': '執行查詢',
+        }
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+            'Referer': TARGET_URL
+        }
+        try:
+            response = session.post(TARGET_URL, data=payload, headers=headers, timeout=30, verify=False)
+            response.raise_for_status() 
+            soup = BeautifulSoup(response.text, 'html.parser')
+            course_table = soup.find('table', id='ctl00_MainContent_Course_GridView') 
+            if not course_table:
+                 logging.error(f"課號 {course_id} 爬蟲失敗：找不到結果表格 ID。")
+                 return None
+            rows = course_table.find_all('tr')
+            data_row = None
+            for row in rows[1:]: 
+                cells = row.find_all('td')
+                if len(cells) > 0:
+                     course_id_in_table = cells[0].text.strip()
+                     course_id_in_table = re.sub(r'\s+', '', course_id_in_table) 
+                     if course_id_in_table == course_id: 
+                         data_row = row
+                         break
+            if not data_row:
+                logging.warning(f"課號 {course_id} 在學期 {acad_seme} 的查詢結果中未找到該行數據。")
                 return None
-        else:
-            logging.warning(f"課號 {course_id} 的表格行欄位數量不足。")
+            cells = data_row.find_all('td')
+            if len(cells) > 10: 
+                try:
+                    # 抓取人數 (cells[9])
+                    current_count_text = cells[9].text.strip()
+                    current_count = int(current_count_text)
+                    
+                    # 抓取課程名稱 (cells[2])
+                    course_name_text = cells[2].text.strip()
+
+                    # ✅ 新增：抓取星期/節次/教室 (cells[7])
+                    schedule_text = cells[7].text.strip()
+                    
+                    # 抓取人數上限 (cells[10])
+                    max_count_text = cells[10].text.strip()
+                    max_match = re.search(r'(\d+)', max_count_text) 
+                    max_count = 999 
+                    if max_match:
+                        max_count = int(max_match.group(1))
+                    elif "限" not in max_count_text:
+                        max_count = 999 
+                    
+                    # ✅ 將 schedule 放入回傳的字典中
+                    return {
+                        'current': current_count, 
+                        'max': max_count, 
+                        'course_name': course_name_text,
+                        'schedule': schedule_text 
+                    }
+                    
+                except Exception as e:
+                    logging.warning(f"課號 {course_id} 找到行但解析人數時出錯: {e}")
+                    return None
+            else:
+                logging.warning(f"課號 {course_id} 的表格行欄位數量不足。")
+                return None
+        except requests.exceptions.RequestException as e:
+            logging.error(f"爬蟲請求失敗: {e}")
             return None
-    except requests.exceptions.RequestException as e:
-        logging.error(f"爬蟲請求失敗: {e}")
-        return None
 
 
 class EnrollmentMonitor(Cog_Extension):
