@@ -369,7 +369,12 @@ class EnrollmentMonitor(Cog_Extension):
                 logging.info(f"課號 {course_id} ({course_name}) 變為 [有空位]。")
                 embed = discord.Embed(
                     title="🟢 搶課警報：有空位了！", 
-                    description=f"課程 **{course_name}** (`{course_id}`) (學期: {acad_seme}) **有空位了，快搶！**", 
+                    description=(
+                        f"課程 **{course_name}** (學期: {acad_seme}) **有空位了，快搶！**\n\n"
+                        f"📋 **課號 (點擊可複製)**: `{course_id}`\n"
+                        "🔗 **選課連結**\n"
+                        "[點擊前往選課系統](https://webapp.yuntech.edu.tw/AAXCCS/CourseSelectionRegister.aspx)"
+                    ), 
                     color=0x32CD32
                 )
                 embed.add_field(name="當前人數 (Sel.)", value=f"**{current_count}** 人", inline=True)
@@ -583,7 +588,12 @@ class EnrollmentMonitor(Cog_Extension):
                 if new_status == "AVAILABLE":
                     embed_title = "🟢 初始狀態：有空位"
                     # 🆕 修改 Embed 描述
-                    embed_desc = f"監測的課程 **{course_name}** (`{course_id}`) (學期: {acad_seme}) **目前有空位！**"
+                    embed_desc = (
+                        f"監測的課程 **{course_name}** (學期: {acad_seme}) **目前有空位！**\n\n"
+                        f"📋 **課號 (點擊可複製)**: `{course_id}`\n"
+                        "🔗 **選課連結**\n"
+                        "[點擊前往選課系統](https://webapp.yuntech.edu.tw/AAXCCS/CourseSelectionRegister.aspx)"
+                    )
                     embed_color = 0x32CD32
                 else: # new_status == "FULL"
                     embed_title = "🔴 初始狀態：已額滿"
