@@ -26,12 +26,18 @@ MONITOR_ROLE_CATEGORY_ID_STR = os.getenv('MONITOR_ROLE_CATEGORY_ID')
 # 禁用 requests 呼叫 verify=False 時產生的警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning) 
 
+# --- 建立全域 Session 與 Retry ---
+session = requests.Session()
+retries = urllib3.util.Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+session.mount('https://', requests.adapters.HTTPAdapter(max_retries=retries))
+session.mount('http://', requests.adapters.HTTPAdapter(max_retries=retries))
+
 # --- 爬蟲核心函式 ---
 def _fetch_state_keys() -> Optional[Dict[str, str]]:
     GET_URL = "https://webapp.yuntech.edu.tw/WebNewCAS/Course/QueryCour.aspx"
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
     try:
-        response = requests.get(GET_URL, headers=headers, timeout=10, verify=False)
+        response = session.get(GET_URL, headers=headers, timeout=20, verify=False)
         response.raise_for_status() 
         soup = BeautifulSoup(response.text, 'html.parser')
         keys = {}
@@ -82,7 +88,7 @@ def _get_course_status(course_id: str, acad_seme: str) -> Optional[Dict[str, Any
         'Referer': TARGET_URL
     }
     try:
-        response = requests.post(TARGET_URL, data=payload, headers=headers, timeout=15, verify=False)
+        response = session.post(TARGET_URL, data=payload, headers=headers, timeout=30, verify=False)
         response.raise_for_status() 
         soup = BeautifulSoup(response.text, 'html.parser')
         course_table = soup.find('table', id='ctl00_MainContent_Course_GridView') 
