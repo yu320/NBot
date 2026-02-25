@@ -30,3 +30,18 @@ __pycache__/
 GAS
 data/*
 !data/meetup_keywords.json
+
+# 忽略虛擬環境
+venv/
+.venv/
+env/
+bin/
+Include/
+Lib/
+Scripts/
+pyvenv.cfg
+
+# 測試與快取
+.pytest_cache/
+.history/
+.ipynb_checkpoints/
